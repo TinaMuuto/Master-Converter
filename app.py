@@ -9,7 +9,7 @@ import requests
 def load_library():
     library_file = "Library_data.xlsx"
     if os.path.exists(library_file):
-        df = pd.read_csv(library_file) if library_file.endswith('.csv') else pd.read_excel(library_file, engine='openpyxl')
+        df = pd.read_excel(library_file, engine='openpyxl')
         df.columns = [col.strip() for col in df.columns if col is not None]
         return df
     else:
@@ -40,70 +40,18 @@ def load_excel(file):
         st.error(f"Error loading Excel file: {e}")
         return None
 
-def clean_column_names(df):
+def extract_fixed_columns(df):
     df = df.iloc[2:].reset_index(drop=True)  # Start fra række 3
-    df.columns = df.iloc[0].astype(str).str.strip()
-    df = df[1:].reset_index(drop=True)
-    
-    # Brug faste indeks til at vælge kolonner
     article_no_col = df.iloc[:, 17]  # Kolonne R
     quantity_col = df.iloc[:, 30]  # Kolonne AE
-    
-    cleaned_df = pd.DataFrame({'Article No.': article_no_col, 'Quantity': quantity_col})
-    st.write("Processed User Data Columns:", cleaned_df.columns.tolist())
-    return cleaned_df
-    df.columns = df.iloc[1].astype(str).str.strip().str.lower().str.replace(' ', ' ')
-    df = df[2:].reset_index(drop=True)
-    
-    # Ensure correct mapping of 'Article No.' and 'Quantity'
-    column_mapping = {}
-    for col in df.columns:
-        if col.lower().strip() in ["article no.", "item variant number", "item no.", "article number"]:
-            column_mapping[col] = "Article No."
-        elif col.lower().strip() == "quantity":
-            column_mapping[col] = "Quantity"
-    
-    df.rename(columns=column_mapping, inplace=True)
-    
-    st.write("Cleaned and mapped User Data Columns:", df.columns.tolist())
-    return df
-    df.columns = df.iloc[1].astype(str).str.strip().str.lower().str.replace(' ', ' ')
-    df = df[2:].reset_index(drop=True)
-    st.write("Cleaned User Data Columns:", df.columns.tolist())
-    return df
-    df.columns = df.iloc[1].astype(str).str.strip()
-    return df[2:].reset_index(drop=True)
-
-def match_columns(user_df):
-    st.write("Debug - User Data Columns:", user_df.columns.tolist())  # Debugging log
-    possible_columns = ["Article No.", "Item variant number", "Item no.", "Article Number"]
-    match_column = next((col for col in user_df.columns if col.lower().strip() in [pc.lower().strip() for pc in possible_columns]), None)
-    if match_column is None:
-        st.error("The uploaded file must contain one of the expected item number columns: 'Item variant number', 'Item no.', 'Article No.', or 'Article Number'.")
-        st.stop()
-    return match_column
-    possible_columns = ["Article No.", "Item variant number", "Item no."]
-    match_column = next((col for col in user_df.columns if col.lower() in [pc.lower() for pc in possible_columns]), None)
-    if match_column is None:
-        st.error("The uploaded file must contain either 'Item variant number', 'Item no.', or 'Article No.'")
-        st.stop()
-    return match_column
+    return pd.DataFrame({'Article No.': article_no_col, 'Quantity': quantity_col})
 
 def merge_library_data(user_df, library_df):
-    match_column = match_columns(user_df)
-    required_columns = ['EUR item no.', 'Product']
-    for col in required_columns:
-        if col not in library_df.columns:
-            st.error(f"Column '{col}' not found in Library_data. Available columns: {library_df.columns}")
-            st.stop()
-    merged_df = user_df.merge(library_df[['EUR item no.', 'Product']], left_on=match_column, right_on='EUR item no.', how='left')
+    merged_df = user_df.merge(library_df[['EUR item no.', 'Product']], left_on='Article No.', right_on='EUR item no.', how='left')
     merged_df['Output'] = merged_df['Quantity'].astype(str) + ' X ' + merged_df['Product'].fillna('Unknown')
     return merged_df[['Output']]
 
 def generate_order_import_file(user_df):
-    if 'Quantity' not in user_df.columns or 'Article No.' not in user_df.columns:
-        st.error("Required columns not found in uploaded file. Check column names and header row.")
-        st.stop()
     order_data = user_df[['Quantity', 'Article No.']].copy()
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -112,44 +60,8 @@ def generate_order_import_file(user_df):
     return buffer
 
 def generate_sku_mapping(user_df, library_df, master_df):
-    # Debugging: Print column names before merging
-    st.write("User Data Columns:", user_df.columns.tolist())
-    st.write("Library Data Columns:", library_df.columns.tolist())
-    st.write("Master Data Columns:", master_df.columns.tolist())
-    
-    # Ensure columns are stripped of spaces
-    user_df.columns = user_df.columns.str.strip().str.lower().str.replace(' ', ' ')
-    library_df.columns = library_df.columns.str.strip().str.lower().str.replace(' ', ' ')
-    master_df.columns = master_df.columns.str.strip()
-    
-    # Validate necessary columns exist
-    if 'Article No.' not in user_df.columns:
-        st.error("Column 'Article No.' not found in uploaded file.")
-        st.stop()
-    if 'EUR item no.' not in library_df.columns:
-        st.error("Column 'EUR item no.' not found in Library Data.")
-        st.stop()
-    if 'ITEM NO.' not in master_df.columns:
-        st.error("Column 'ITEM NO.' not found in Master Data.")
-        st.stop()
-    
-    # Proceed with merging
-    mapping = user_df.merge(library_df, left_on='Article No.', right_on='EUR item no.', how='left')
-    mapping = mapping[['Quantity', 'Product', 'EUR item no.', 'GBP item no.', 'APMEA item no.', 'USD pattern no.']]
-    
+    mapping = user_df.merge(library_df[['EUR item no.', 'Product', 'GBP item no.', 'APMEA item no.', 'USD pattern no.']], left_on='Article No.', right_on='EUR item no.', how='left')
     master_data = user_df.merge(master_df, left_on='Article No.', right_on='ITEM NO.', how='left')
-    
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        mapping.to_excel(writer, sheet_name='Item number mapping', index=False)
-        master_data.to_excel(writer, sheet_name='Masterdata', index=False)
-    buffer.seek(0)
-    return buffer
-    mapping = user_df.merge(library_df, left_on='Article No.', right_on='EUR item no.', how='left')
-    mapping = mapping[['Quantity', 'Product', 'EUR item no.', 'GBP item no.', 'APMEA item no.', 'USD pattern no.']]
-    
-    master_data = user_df.merge(master_df, left_on='Article No.', right_on='ITEM NO.', how='left')
-    
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         mapping.to_excel(writer, sheet_name='Item number mapping', index=False)
@@ -175,15 +87,12 @@ This tool is designed to **help you structure, validate, and enrich pCon product
 uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'xls', 'csv'])
 
 if uploaded_file is not None and Library_data is not None and Master_data is not None:
-    if uploaded_file.name.endswith(".csv"):
-        user_df = pd.read_csv(uploaded_file)
+    user_df = load_excel(uploaded_file)
+    if 'Article List' in user_df:
+        user_df = extract_fixed_columns(user_df['Article List'])
     else:
-        user_df = load_excel(uploaded_file)
-        if 'Article List' in user_df:
-            user_df = clean_column_names(user_df['Article List'])
-        else:
-            st.error("No 'Article List' sheet found in the uploaded file.")
-            st.stop()
+        st.error("No 'Article List' sheet found in the uploaded file.")
+        st.stop()
     
     if st.button("Download product list for presentations"):
         merged_df = merge_library_data(user_df, Library_data)
