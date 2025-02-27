@@ -25,6 +25,9 @@ def download_file(url):
 
 def clean_column_names(df):
     df.columns = df.iloc[1].astype(str).str.strip()
+    df = df[2:].reset_index(drop=True)
+    return df
+    df.columns = df.iloc[1].astype(str).str.strip()
 df = df[2:].reset_index(drop=True)
     return df[2:].reset_index(drop=True)
 
@@ -65,6 +68,9 @@ def generate_order_import_file(user_df):
         if col not in user_df.columns:
             st.error(f"Column '{col}' not found in uploaded file. Available columns: {user_df.columns}")
             st.stop()
+    if 'Quantity' not in user_df.columns or 'Article No.' not in user_df.columns:
+        st.error(f"Missing expected columns in uploaded file. Found columns: {list(user_df.columns)}")
+        st.stop()
     order_data = user_df[['Quantity', 'Article No.']].copy()
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -143,5 +149,4 @@ if uploaded_file and Library_data and master_data:
     if st.button("Download masterdata and SKU mapping"):
         buffer = generate_sku_mapping(user_df, Library_data['Sheet1'], master_data['Sheet'])
         st.download_button("Download SKU mapping", buffer, file_name="masterdata-SKUmapping.xlsx")
-else:
-    st.warning("Please upload your product list. Library and Master Data are automatically downloaded.")
+
