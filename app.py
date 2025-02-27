@@ -111,4 +111,4 @@ if uploaded_file is not None and Library_data is not None and Master_data is not
     
         if st.button("Generate masterdata and SKU mapping"):
         buffer_sku_mapping = generate_sku_mapping(user_df, Library_data, Master_data)
-        st.download_button("Download", buffer_sku_mapping, file_name="masterdata-SKUmapping.xlsx")
+        st.download_button("Download masterdata and SKU mapping", buffer_sku_mapping, file_name="masterdata-SKUmapping.xlsx")
