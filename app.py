@@ -41,7 +41,7 @@ def load_excel(file):
         return None
 
 def clean_column_names(df):
-    df.columns = df.iloc[1].astype(str).str.strip().str.lower().str.replace('\xa0', ' ')
+    df.columns = df.iloc[1].astype(str).str.strip().str.lower().str.replace(' ', ' ')
     df = df[2:].reset_index(drop=True)
     st.write("Cleaned User Data Columns:", df.columns.tolist())
     return df
@@ -49,6 +49,13 @@ def clean_column_names(df):
     return df[2:].reset_index(drop=True)
 
 def match_columns(user_df):
+    st.write("Debug - User Data Columns:", user_df.columns.tolist())  # Debugging log
+    possible_columns = ["Article No.", "Item variant number", "Item no.", "Article Number"]
+    match_column = next((col for col in user_df.columns if col.lower().strip() in [pc.lower().strip() for pc in possible_columns]), None)
+    if match_column is None:
+        st.error("The uploaded file must contain one of the expected item number columns: 'Item variant number', 'Item no.', 'Article No.', or 'Article Number'.")
+        st.stop()
+    return match_column
     possible_columns = ["Article No.", "Item variant number", "Item no."]
     match_column = next((col for col in user_df.columns if col.lower() in [pc.lower() for pc in possible_columns]), None)
     if match_column is None:
