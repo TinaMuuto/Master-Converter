@@ -94,18 +94,21 @@ if uploaded_file is not None and Library_data is not None and Master_data is not
         st.error("No 'Article List' sheet found in the uploaded file.")
         st.stop()
     
-    presentation_df = merge_library_data(user_df, Library_data)
-buffer_presentation = BytesIO()
-doc = Document()
-doc.add_heading('Product List for Presentations', level=1)
-for row in presentation_df['Output']:
-    doc.add_paragraph(row)
-doc.save(buffer_presentation)
-buffer_presentation.seek(0)
-st.download_button("Download product list for presentations", buffer_presentation, file_name="product-list_presentation.docx")
+        presentation_df = merge_library_data(user_df, Library_data)
+    if st.button("Generate product list for presentations"):
+        buffer_presentation = BytesIO()
+        doc = Document()
+        doc.add_heading('Product List for Presentations', level=1)
+        for row in presentation_df['Output']:
+            doc.add_paragraph(row)
+        doc.save(buffer_presentation)
+        buffer_presentation.seek(0)
+        st.download_button("Download", buffer_presentation, file_name="product-list_presentation.docx")
     
-    buffer_order_import = generate_order_import_file(user_df)
-st.download_button("Download product list for order import in partner platform", buffer_order_import, file_name="order-import.xlsx")
+        if st.button("Generate order import file"):
+        buffer_order_import = generate_order_import_file(user_df)
+        st.download_button("Download", buffer_order_import, file_name="order-import.xlsx")
     
-    buffer_sku_mapping = generate_sku_mapping(user_df, Library_data, Master_data)
-st.download_button("Download masterdata and SKU mapping", buffer_sku_mapping, file_name="masterdata-SKUmapping.xlsx")
+        if st.button("Generate masterdata and SKU mapping"):
+        buffer_sku_mapping = generate_sku_mapping(user_df, Library_data, Master_data)
+        st.download_button("Download", buffer_sku_mapping, file_name="masterdata-SKUmapping.xlsx")
