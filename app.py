@@ -94,7 +94,15 @@ if uploaded_file is not None and Library_data is not None and Master_data is not
         st.error("No 'Article List' sheet found in the uploaded file.")
         st.stop()
     
-    st.download_button("Download product list for presentations", buffer, file_name="product-list_presentation.docx")
+    presentation_df = merge_library_data(user_df, Library_data)
+        buffer_presentation = BytesIO()
+        doc = Document()
+        doc.add_heading('Product List for Presentations', level=1)
+        for row in presentation_df['Output']:
+            doc.add_paragraph(row)
+        doc.save(buffer_presentation)
+        buffer_presentation.seek(0)
+        st.download_button("Download product list for presentations", buffer_presentation, file_name="product-list_presentation.docx")
     
     st.download_button("Download product list for order import in partner platform", buffer, file_name="order-import.xlsx")
     
