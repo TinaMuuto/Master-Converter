@@ -1,55 +1,90 @@
 import streamlit as st
 import pandas as pd
-import os
+import openpyxl
 from io import BytesIO
-from utils import load_library_data, match_item_numbers, generate_product_list_presentation, generate_order_import, generate_detailed_product_list, generate_masterdata
+from docx import Document
 
-# Filnavne for opslag
-LIBRARY_FILE = "Library_data.xlsx"
-MASTER_FILE = "Muuto_Master_Data_CON_January_2025_EUR.xlsx"
+def load_excel(file):
+    try:
+        return pd.read_excel(file, sheet_name=None, engine='openpyxl')
+    except Exception as e:
+        st.error(f"Error loading Excel file: {e}")
+        return None
 
-# Load library data
-library_df = load_library_data(LIBRARY_FILE)
-master_df = load_library_data(MASTER_FILE)
+def clean_column_names(df):
+    df.columns = df.iloc[1].astype(str).str.strip()
+    return df[2:].reset_index(drop=True)
 
-# Streamlit UI
-st.title("Muuto Product List Generator")
-st.write("This app allows you to upload an Excel or CSV file and generate various product lists by matching with Muuto's reference data.")
+def merge_library_data(user_df, library_df):
+    merged_df = user_df.merge(library_df[['EUR item no.', 'Product']], left_on='Article No.', right_on='EUR item no.', how='left')
+    merged_df['Output'] = merged_df['Quantity'].astype(str) + ' X ' + merged_df['Product'].fillna('Unknown')
+    return merged_df[['Output']]
 
-st.subheader("How it works")
-st.markdown("""
-1. Upload your file (Excel or CSV).
-2. The app automatically identifies the relevant column for lookup.
-3. It matches your data against Muuto’s library.
-4. You can download four different files:
-   - Product list for presentations (Word)
-   - Order import file (Excel)
-   - Detailed product list with item number mapping (Excel)
-   - Master data for products in setting (Excel)
+def generate_presentation_doc(merged_df):
+    doc = Document()
+    doc.add_heading('Product List for Presentations', level=1)
+    for row in merged_df['Output']:
+        doc.add_paragraph(row)
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+def generate_order_import_file(user_df):
+    order_data = user_df[['Quantity', 'Article No.']].copy()
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        order_data.to_excel(writer, index=False, header=False)
+    buffer.seek(0)
+    return buffer
+
+def generate_sku_mapping(user_df, library_df, master_df):
+    mapping = user_df.merge(library_df, left_on='Article No.', right_on='EUR item no.', how='left')
+    mapping = mapping[['Quantity', 'Product', 'EUR item no.', 'GBP item no.', 'APMEA item no.', 'USD pattern no.']]
+    
+    master_data = user_df.merge(master_df, left_on='Article No.', right_on='ITEM NO.', how='left')
+    
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        mapping.to_excel(writer, sheet_name='Item number mapping', index=False)
+        master_data.to_excel(writer, sheet_name='Masterdata', index=False)
+    buffer.seek(0)
+    return buffer
+
+st.title('Muuto Product List Generator')
+st.write("""
+This app helps you enrich and validate product data by uploading an exported product list.
+
+### How it works:
+1. Export your product list as an Excel file from pCon.
+2. Upload the file here.
+3. Choose the desired output format and download the enriched file.
+
+[Example file](https://github.com/TinaMuuto/Master-Converter/blob/main/pCon%20-%20exceleksport.xlsx)
 """)
 
-uploaded_file = st.file_uploader("Upload your file", type=["csv", "xlsx", "xlsm", "xls"])
+uploaded_file = st.file_uploader("Upload your product list (Excel)", type=['xlsx', 'xls'])
 
 if uploaded_file:
-    user_df = pd.read_excel(uploaded_file, None) if uploaded_file.name.endswith(("xlsx", "xlsm", "xls")) else {"Sheet1": pd.read_csv(uploaded_file, delimiter=";", encoding="utf-8")}
+    user_data = load_excel(uploaded_file)
+    library_data = load_excel("/mnt/data/Library_data.xlsx")["Sheet1"]
+    master_data = load_excel("/mnt/data/Muuto_Master_Data_CON_January_2025_EUR.xlsx")["Sheet1"]
     
-    # Identificer lookup-kolonne
-    lookup_column = match_item_numbers(user_df)
-
-    if lookup_column:
-        st.success(f"Identified lookup column: {lookup_column}")
-
-        # Generer outputfiler
-        product_list_docx = generate_product_list_presentation(user_df, lookup_column, library_df)
-        order_import_excel = generate_order_import(user_df, lookup_column)
-        detailed_product_excel = generate_detailed_product_list(user_df, lookup_column, library_df)
-        masterdata_excel = generate_masterdata(user_df, lookup_column, library_df, master_df)
-
-        # Download knapper
-        st.download_button("Download product list for presentations", data=product_list_docx, file_name="product-list_presentation.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-        st.download_button("Download product list for order import in partner platform", data=order_import_excel, file_name="order-import.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.download_button("Download detailed product list with item number mapping", data=detailed_product_excel, file_name="detailed-product-list.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.download_button("Download masterdata for products in setting", data=masterdata_excel, file_name="masterdata.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    if 'Article List' in user_data:
+        user_df = clean_column_names(user_data['Article List'])
     else:
-        st.error("Could not find a matching column in the uploaded file.")
-
+        st.error("No 'Article List' sheet found in the uploaded file.")
+        st.stop()
+    
+    if st.button("Download product list for presentations"):
+        merged_df = merge_library_data(user_df, library_data)
+        buffer = generate_presentation_doc(merged_df)
+        st.download_button("Download product list for presentations", buffer, file_name="product-list_presentation.docx")
+    
+    if st.button("Download product list for order import in partner platform"):
+        buffer = generate_order_import_file(user_df)
+        st.download_button("Download order import file", buffer, file_name="order-import.xlsx")
+    
+    if st.button("Download masterdata and SKU mapping"):
+        buffer = generate_sku_mapping(user_df, library_data, master_data)
+        st.download_button("Download SKU mapping", buffer, file_name="masterdata-SKUmapping.xlsx")
