@@ -95,15 +95,17 @@ if uploaded_file is not None and Library_data is not None and Master_data is not
         st.stop()
     
     presentation_df = merge_library_data(user_df, Library_data)
-        buffer_presentation = BytesIO()
-        doc = Document()
-        doc.add_heading('Product List for Presentations', level=1)
-        for row in presentation_df['Output']:
-            doc.add_paragraph(row)
-        doc.save(buffer_presentation)
-        buffer_presentation.seek(0)
-        st.download_button("Download product list for presentations", buffer_presentation, file_name="product-list_presentation.docx")
+buffer_presentation = BytesIO()
+doc = Document()
+doc.add_heading('Product List for Presentations', level=1)
+for row in presentation_df['Output']:
+    doc.add_paragraph(row)
+doc.save(buffer_presentation)
+buffer_presentation.seek(0)
+st.download_button("Download product list for presentations", buffer_presentation, file_name="product-list_presentation.docx")
     
-    st.download_button("Download product list for order import in partner platform", buffer, file_name="order-import.xlsx")
+    buffer_order_import = generate_order_import_file(user_df)
+st.download_button("Download product list for order import in partner platform", buffer_order_import, file_name="order-import.xlsx")
     
-    st.download_button("Download masterdata and SKU mapping", buffer, file_name="masterdata-SKUmapping.xlsx")
+    buffer_sku_mapping = generate_sku_mapping(user_df, Library_data, Master_data)
+st.download_button("Download masterdata and SKU mapping", buffer_sku_mapping, file_name="masterdata-SKUmapping.xlsx")
