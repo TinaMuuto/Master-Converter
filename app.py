@@ -41,6 +41,17 @@ def load_excel(file):
         return None
 
 def clean_column_names(df):
+    df = df.iloc[2:].reset_index(drop=True)  # Ensure data starts from row 3
+    df.columns = df.iloc[0].astype(str).str.strip()
+    df = df[1:].reset_index(drop=True)
+    
+    # Select columns based on fixed positions
+    article_no_col = df.iloc[:, 17]  # Column R
+    quantity_col = df.iloc[:, 30]  # Column AE
+    
+    df = pd.DataFrame({'Article No.': article_no_col, 'Quantity': quantity_col})
+    st.write("Processed User Data Columns:", df.columns.tolist())
+    return df
     df.columns = df.iloc[1].astype(str).str.strip().str.lower().str.replace(' ', ' ')
     df = df[2:].reset_index(drop=True)
     
