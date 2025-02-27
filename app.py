@@ -7,8 +7,9 @@ import requests
 
 def load_excel(file):
     try:
+        if file is None:
+            raise ValueError("File not provided")
         excel_data = pd.ExcelFile(file, engine='openpyxl')
-        
         return {sheet: pd.read_excel(excel_data, sheet_name=sheet) for sheet in excel_data.sheet_names}
     except Exception as e:
         st.error(f"Error loading Excel file: {e}")
@@ -18,6 +19,9 @@ def download_file(url):
     try:
         response = requests.get(url)
         response.raise_for_status()
+        if response.headers.get('Content-Type') not in ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']:
+            st.error("Downloaded file is not a valid Excel file.")
+            return None
         return BytesIO(response.content)
     except requests.exceptions.RequestException as e:
         st.error(f"Error downloading file: {e}")
@@ -26,25 +30,18 @@ def download_file(url):
 def clean_column_names(df):
     df.columns = df.iloc[1].astype(str).str.strip()
     return df[2:].reset_index(drop=True)
-    return df
-    df.columns = df.iloc[1].astype(str).str.strip()
-df = df[2:].reset_index(drop=True)
-    return df[2:].reset_index(drop=True)
 
 def merge_library_data(user_df, library_df):
-    # Debugging: Print column names to check if expected columns exist
-    st.write("Library_data Columns:", library_df.columns)
-    st.write("User Data Columns:", user_df.columns)
-    
     required_columns = ['EUR item no.', 'Product']
     for col in required_columns:
         if col not in library_df.columns:
             st.error(f"Column '{col}' not found in Library_data. Available columns: {library_df.columns}")
             st.stop()
     
-    if 'Article No.' not in user_df.columns:
-        st.error("Column 'Article No.' not found in uploaded file.")
+    if 'Article No.' not in user_df.columns or 'Quantity' not in user_df.columns:
+        st.error("Required columns not found in uploaded file. Check column names and header row.")
         st.stop()
+    
     merged_df = user_df.merge(library_df[['EUR item no.', 'Product']], left_on='Article No.', right_on='EUR item no.', how='left')
     merged_df['Output'] = merged_df['Quantity'].astype(str) + ' X ' + merged_df['Product'].fillna('Unknown')
     return merged_df[['Output']]
@@ -60,16 +57,8 @@ def generate_presentation_doc(merged_df):
     return buffer
 
 def generate_order_import_file(user_df):
-    # Debugging: Print column names to check if expected columns exist
-    st.write("User Data Columns (Order Import):", user_df.columns)
-    
-    required_columns = ['Quantity', 'Article No.']
-    for col in required_columns:
-        if col not in user_df.columns:
-            st.error(f"Column '{col}' not found in uploaded file. Available columns: {user_df.columns}")
-            st.stop()
     if 'Quantity' not in user_df.columns or 'Article No.' not in user_df.columns:
-        st.error(f"Missing expected columns in uploaded file. Found columns: {list(user_df.columns)}")
+        st.error("Required columns not found in uploaded file. Check column names and header row.")
         st.stop()
     order_data = user_df[['Quantity', 'Article No.']].copy()
     buffer = BytesIO()
@@ -93,7 +82,6 @@ def generate_sku_mapping(user_df, library_df, master_df):
 
 st.title('Muuto Product List Generator')
 st.write("""
-
 This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
 ### **How it works:**  
 1. **Upload your product list** – Export it from pCon as an Excel file.  
@@ -117,18 +105,11 @@ master_file = download_file(master_url)
 Library_data = load_excel(library_file)
 master_data = load_excel(master_file)
 
-
-
 if uploaded_file and Library_data and master_data:
-    # Check if expected sheets exist
-    expected_library_sheet = 'Sheet1'
-    expected_master_sheet = 'Sheet'
-    if expected_library_sheet not in Library_data:
-        st.error(f"Expected sheet '{expected_library_sheet}' not found in Library_data. Available sheets: {list(Library_data.keys())}")
+    if 'Sheet1' not in Library_data or 'Sheet' not in master_data:
+        st.error("One or more required sheets are missing. Please check your files.")
         st.stop()
-    if expected_master_sheet not in master_data:
-        st.error(f"Expected sheet '{expected_master_sheet}' not found in master_data. Available sheets: {list(master_data.keys())}")
-        st.stop()
+    
     user_data = load_excel(uploaded_file)
     
     if 'Article List' in user_data:
@@ -149,4 +130,3 @@ if uploaded_file and Library_data and master_data:
     if st.button("Download masterdata and SKU mapping"):
         buffer = generate_sku_mapping(user_df, Library_data['Sheet1'], master_data['Sheet'])
         st.download_button("Download SKU mapping", buffer, file_name="masterdata-SKUmapping.xlsx")
-
