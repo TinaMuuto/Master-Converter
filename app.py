@@ -25,7 +25,7 @@ def download_file(url):
 
 def clean_column_names(df):
     df.columns = df.iloc[1].astype(str).str.strip()
-    df = df[2:].reset_index(drop=True)
+    return df[2:].reset_index(drop=True)
     return df
     df.columns = df.iloc[1].astype(str).str.strip()
 df = df[2:].reset_index(drop=True)
