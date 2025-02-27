@@ -81,8 +81,11 @@ uploaded_file = st.file_uploader("Upload your product list (Excel)", type=['xlsx
 library_url = "https://raw.githubusercontent.com/TinaMuuto/Master-Converter/9c2dfc70d2d8c44ffaa3b2e3e92f53d20b7a8b36/Library_data.xlsx"
 master_url = "https://raw.githubusercontent.com/TinaMuuto/Master-Converter/9c2dfc70d2d8c44ffaa3b2e3e92f53d20b7a8b36/Muuto_Master_Data_CON_January_2025_EUR.xlsx"
 
-library_data = load_excel(download_file(library_url))["Sheet1"] if download_file(library_url) else None
-master_data = load_excel(download_file(master_url))["Sheet1"] if download_file(master_url) else None
+library_file = download_file(library_url)
+master_file = download_file(master_url)
+
+library_data = load_excel(library_file)["Sheet1"] if library_file else None
+master_data = load_excel(master_file)["Sheet1"] if master_file else None
 
 if uploaded_file and library_data is not None and master_data is not None:
     user_data = load_excel(uploaded_file)
