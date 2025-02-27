@@ -41,6 +41,10 @@ def load_excel(file):
         return None
 
 def clean_column_names(df):
+    df.columns = df.iloc[1].astype(str).str.strip().str.lower().str.replace('\xa0', ' ')
+    df = df[2:].reset_index(drop=True)
+    st.write("Cleaned User Data Columns:", df.columns.tolist())
+    return df
     df.columns = df.iloc[1].astype(str).str.strip()
     return df[2:].reset_index(drop=True)
 
