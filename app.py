@@ -1,9 +1,34 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
+import os
 from io import BytesIO
 from docx import Document
 import requests
+
+def load_library():
+    library_file = "Library_data.xlsx"
+    if os.path.exists(library_file):
+        df = pd.read_csv(library_file) if library_file.endswith('.csv') else pd.read_excel(library_file, engine='openpyxl')
+        df.columns = [col.strip() for col in df.columns if col is not None]
+        return df
+    else:
+        st.error("Library data file 'Library_data.xlsx' is missing. Please upload a valid library file.")
+        return None
+
+def load_master_data():
+    master_file = "Muuto_Master_Data_CON_January_2025_EUR.xlsx"
+    if os.path.exists(master_file):
+        df = pd.read_excel(master_file, engine='openpyxl')
+        df.columns = [col.strip() for col in df.columns if col is not None]
+        return df
+    else:
+        st.error("Master data file is missing. Please upload a valid master file.")
+        return None
+
+# Indlæs Library-data og Master-data én gang
+Library_data = load_library()
+Master_data = load_master_data()
 
 def load_excel(file):
     try:
@@ -15,46 +40,28 @@ def load_excel(file):
         st.error(f"Error loading Excel file: {e}")
         return None
 
-def download_file(url):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        if response.headers.get('Content-Type') not in ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']:
-            st.error("Downloaded file is not a valid Excel file.")
-            return None
-        return BytesIO(response.content)
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error downloading file: {e}")
-        return None
-
 def clean_column_names(df):
     df.columns = df.iloc[1].astype(str).str.strip()
     return df[2:].reset_index(drop=True)
 
+def match_columns(user_df):
+    possible_columns = ["Article No.", "Item variant number", "Item no."]
+    match_column = next((col for col in user_df.columns if col.lower() in [pc.lower() for pc in possible_columns]), None)
+    if match_column is None:
+        st.error("The uploaded file must contain either 'Item variant number', 'Item no.', or 'Article No.'")
+        st.stop()
+    return match_column
+
 def merge_library_data(user_df, library_df):
+    match_column = match_columns(user_df)
     required_columns = ['EUR item no.', 'Product']
     for col in required_columns:
         if col not in library_df.columns:
             st.error(f"Column '{col}' not found in Library_data. Available columns: {library_df.columns}")
             st.stop()
-    
-    if 'Article No.' not in user_df.columns or 'Quantity' not in user_df.columns:
-        st.error("Required columns not found in uploaded file. Check column names and header row.")
-        st.stop()
-    
-    merged_df = user_df.merge(library_df[['EUR item no.', 'Product']], left_on='Article No.', right_on='EUR item no.', how='left')
+    merged_df = user_df.merge(library_df[['EUR item no.', 'Product']], left_on=match_column, right_on='EUR item no.', how='left')
     merged_df['Output'] = merged_df['Quantity'].astype(str) + ' X ' + merged_df['Product'].fillna('Unknown')
     return merged_df[['Output']]
-
-def generate_presentation_doc(merged_df):
-    doc = Document()
-    doc.add_heading('Product List for Presentations', level=1)
-    for row in merged_df['Output']:
-        doc.add_paragraph(row)
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
 
 def generate_order_import_file(user_df):
     if 'Quantity' not in user_df.columns or 'Article No.' not in user_df.columns:
@@ -81,6 +88,7 @@ def generate_sku_mapping(user_df, library_df, master_df):
     return buffer
 
 st.title('Muuto Product List Generator')
+
 st.write("""
 This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
 ### **How it works:**  
@@ -94,33 +102,28 @@ This tool is designed to **help you structure, validate, and enrich pCon product
 [Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
 """)
 
-uploaded_file = st.file_uploader("Upload your product list (Excel)", type=['xlsx', 'xls'])
+uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'xls', 'csv'])
 
-library_url = "https://raw.githubusercontent.com/TinaMuuto/Master-Converter/9c2dfc70d2d8c44ffaa3b2e3e92f53d20b7a8b36/Library_data.xlsx"
-master_url = "https://raw.githubusercontent.com/TinaMuuto/Master-Converter/9c2dfc70d2d8c44ffaa3b2e3e92f53d20b7a8b36/Muuto_Master_Data_CON_January_2025_EUR.xlsx"
-
-library_file = download_file(library_url)
-master_file = download_file(master_url)
-
-Library_data = load_excel(library_file)
-master_data = load_excel(master_file)
-
-if uploaded_file and Library_data and master_data:
-    if 'Sheet1' not in Library_data or 'Sheet' not in master_data:
-        st.error("One or more required sheets are missing. Please check your files.")
-        st.stop()
-    
-    user_data = load_excel(uploaded_file)
-    
-    if 'Article List' in user_data:
-        user_df = clean_column_names(user_data['Article List'])
+if uploaded_file is not None and Library_data is not None and Master_data is not None:
+    if uploaded_file.name.endswith(".csv"):
+        user_df = pd.read_csv(uploaded_file)
     else:
-        st.error("No 'Article List' sheet found in the uploaded file.")
-        st.stop()
+        user_df = load_excel(uploaded_file)
+        if 'Article List' in user_df:
+            user_df = clean_column_names(user_df['Article List'])
+        else:
+            st.error("No 'Article List' sheet found in the uploaded file.")
+            st.stop()
     
     if st.button("Download product list for presentations"):
-        merged_df = merge_library_data(user_df, Library_data['Sheet1'])
-        buffer = generate_presentation_doc(merged_df)
+        merged_df = merge_library_data(user_df, Library_data)
+        buffer = BytesIO()
+        doc = Document()
+        doc.add_heading('Product List for Presentations', level=1)
+        for row in merged_df['Output']:
+            doc.add_paragraph(row)
+        doc.save(buffer)
+        buffer.seek(0)
         st.download_button("Download product list for presentations", buffer, file_name="product-list_presentation.docx")
     
     if st.button("Download product list for order import in partner platform"):
@@ -128,5 +131,5 @@ if uploaded_file and Library_data and master_data:
         st.download_button("Download order import file", buffer, file_name="order-import.xlsx")
     
     if st.button("Download masterdata and SKU mapping"):
-        buffer = generate_sku_mapping(user_df, Library_data['Sheet1'], master_data['Sheet'])
+        buffer = generate_sku_mapping(user_df, Library_data, Master_data)
         st.download_button("Download SKU mapping", buffer, file_name="masterdata-SKUmapping.xlsx")
