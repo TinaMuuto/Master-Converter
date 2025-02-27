@@ -63,7 +63,7 @@ This tool is designed to **help you structure, validate, and enrich pCon product
    - **Order import file** – A structured file for seamless order uploads to the partner platform.  
    - **SKU mapping & master data** – A detailed overview linking item numbers to relevant product details.  
 
-[Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/main/pCon%20-%20exceleksport.xlsx)
+[Download an example file](https://github.com/TinaMuuto/Master-Converter/blob/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
 """)
 
 uploaded_file = st.file_uploader("Upload your product list (Excel)", type=['xlsx', 'xls'])
