@@ -53,8 +53,6 @@ def generate_sku_mapping(user_df, library_df, master_df):
 
 st.title('Muuto Product List Generator')
 st.write("""
-This app helps you enrich and validate product data by uploading an exported product list.
-
 This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.  
 
 ### **How it works:**  
