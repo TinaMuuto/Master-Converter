@@ -25,6 +25,7 @@ def download_file(url):
 
 def clean_column_names(df):
     df.columns = df.iloc[1].astype(str).str.strip()
+df = df[2:].reset_index(drop=True)
     return df[2:].reset_index(drop=True)
 
 def merge_library_data(user_df, library_df):
@@ -89,6 +90,8 @@ master_file = download_file(master_url)
 Library_data = load_excel(library_file)
 master_data = load_excel(master_file)
 
+
+
 if uploaded_file and Library_data and master_data:
     user_data = load_excel(uploaded_file)
     
@@ -99,7 +102,7 @@ if uploaded_file and Library_data and master_data:
         st.stop()
     
     if st.button("Download product list for presentations"):
-        merged_df = merge_library_data(user_df, Library_data['Sheet'])
+        merged_df = merge_library_data(user_df, Library_data['Sheet1'])
         buffer = generate_presentation_doc(merged_df)
         st.download_button("Download product list for presentations", buffer, file_name="product-list_presentation.docx")
     
@@ -108,7 +111,7 @@ if uploaded_file and Library_data and master_data:
         st.download_button("Download order import file", buffer, file_name="order-import.xlsx")
     
     if st.button("Download masterdata and SKU mapping"):
-        buffer = generate_sku_mapping(user_df, Library_data['Sheet'], master_data['Sheet'])
+        buffer = generate_sku_mapping(user_df, Library_data['Sheet1'], master_data['Sheet'])
         st.download_button("Download SKU mapping", buffer, file_name="masterdata-SKUmapping.xlsx")
 else:
     st.warning("Please upload your product list. Library and Master Data are automatically downloaded.")
