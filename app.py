@@ -74,12 +74,22 @@ st.title('Muuto Product List Generator')
 st.write("""
 This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
 ### **How it works:**  
-1. **Upload your product list** – Export it from pCon as an Excel file.  
-2. **Automated data matching** – The tool cross-references your data with Muuto’s official product library and master data.  
-3. **Download structured files** – Choose from three ready-to-use formats:  
-   - **Product list for presentations** – A clean list to support sales and visual presentations.  
-   - **Order import file** – A structured file for seamless order uploads to the partner platform.  
-   - **SKU mapping & master data** – A detailed overview linking item numbers to relevant product details.  
+Step 1: Export your product list from pCon (formatted like the example file).
+Step 2: Upload your pCon file to the app.
+Step 3: Click one of the three buttons to generate the file you need.
+Step 4: Once generated, a new button will appear for you to download the file.
+
+###**What can the app generate?**
+1. **Product list for presentations – A Word file with product quantities and descriptions for easy copy-pasting into PowerPoint.
+**Example output:**
+    1 X 70/70 Table / 170 X 85 CM / 67 X 33.5" - Solid Oak/Anthracite Black
+    1 X Fiber Armchair / Swivel Base - Refine Leather Cognac/Anthracite Black
+
+2. **Product list for order import – A file formatted for direct import into the partner platform. Allows you to visualize the products, place a quote/order, or pass it to Customer Care to avoid manual entry.
+Master data & SKU mapping – An Excel file with two sheets:
+
+3. **Product SKU mapping – this includes to sheets - A list of products in the uploaded pCon setting with corresponding item numbers for EUR, UK, APMEA, and pattern numbers for the US.
+and a sheets with master data – A full data export of the uploaded products for project documentation.
 
 [Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
 """)
