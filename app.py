@@ -43,6 +43,21 @@ def load_excel(file):
 def clean_column_names(df):
     df.columns = df.iloc[1].astype(str).str.strip().str.lower().str.replace(' ', ' ')
     df = df[2:].reset_index(drop=True)
+    
+    # Ensure correct mapping of 'Article No.' and 'Quantity'
+    column_mapping = {}
+    for col in df.columns:
+        if col.lower().strip() in ["article no.", "item variant number", "item no.", "article number"]:
+            column_mapping[col] = "Article No."
+        elif col.lower().strip() == "quantity":
+            column_mapping[col] = "Quantity"
+    
+    df.rename(columns=column_mapping, inplace=True)
+    
+    st.write("Cleaned and mapped User Data Columns:", df.columns.tolist())
+    return df
+    df.columns = df.iloc[1].astype(str).str.strip().str.lower().str.replace(' ', ' ')
+    df = df[2:].reset_index(drop=True)
     st.write("Cleaned User Data Columns:", df.columns.tolist())
     return df
     df.columns = df.iloc[1].astype(str).str.strip()
