@@ -54,7 +54,7 @@ def generate_sku_mapping(user_df, library_df, master_df):
 st.title('Muuto Product List Generator')
 st.write("""
 
-Managing product data can be time-consuming and complex. This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
+This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
 ### **How it works:**  
 1. **Upload your product list** – Export it from pCon as an Excel file.  
 2. **Automated data matching** – The tool cross-references your data with Muuto’s official product library and master data.  
@@ -63,9 +63,7 @@ Managing product data can be time-consuming and complex. This tool is designed t
    - **Order import file** – A structured file for seamless order uploads to the partner platform.  
    - **SKU mapping & master data** – A detailed overview linking item numbers to relevant product details.  
 
-st.write("""
-Download an example of the required upload file format:
-[Download example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/main/pCon%20-%20exceleksport.xlsx)
+[Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/main/pCon%20-%20exceleksport.xlsx)
 """)
 
 uploaded_file = st.file_uploader("Upload your product list (Excel)", type=['xlsx', 'xls'])
