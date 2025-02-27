@@ -100,8 +100,6 @@ A file formatted for direct import into the partner platform. This allows you to
 An Excel file with two sheets:
 - **Product SKU mapping** – A list of products in the uploaded pCon setting with corresponding item numbers for EUR, UK, APMEA, and pattern numbers for the US.  
 - **Master data export** – A full data export of the uploaded products for project documentation.  
-""")
-
 
 [Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
 """)
