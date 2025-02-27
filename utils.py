@@ -31,5 +31,36 @@ def generate_product_list_presentation(user_data, lookup_col, library_df):
             document.add_paragraph(f"{row['Quantity']} X {row['Product']}")
 
     buffer = BytesIO()
-    document
+    document.save(buffer)
+    return buffer.getvalue()
 
+def generate_order_import(user_data, lookup_col):
+    """ Generate an Excel file for order import """
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        for sheet, df in user_data.items():
+            df_filtered = df[[lookup_col, "Quantity"]].dropna()
+            df_filtered.to_excel(writer, index=False, header=False)
+    return buffer.getvalue()
+
+def generate_detailed_product_list(user_data, lookup_col, library_df):
+    """ Generate an Excel file with detailed product information """
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        for sheet, df in user_data.items():
+            merged = df.merge(library_df, left_on=lookup_col, right_on="EUR item no.", how="left")
+            merged = merged[["Quantity", "Product", "EUR item no.", "GBP item no.", "APMEA item no.", "USD pattern no."]]
+            merged.to_excel(writer, index=False)
+    return buffer.getvalue()
+
+def generate_masterdata(user_data, lookup_col, library_df, master_df):
+    """ Generate an Excel file with master data """
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        for sheet, df in user_data.items():
+            merged = df.merge(library_df, left_on=lookup_col, right_on="EUR item no.", how="left")
+            merged.to_excel(writer, sheet_name="Detailed Product List", index=False)
+            
+            master_merged = df.merge(master_df, left_on=lookup_col, right_on="ITEM NO.", how="left")
+            master_merged.to_excel(writer, sheet_name="Master Data", index=False)
+    return buffer.getvalue()
