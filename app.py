@@ -7,7 +7,9 @@ import requests
 
 def load_excel(file):
     try:
-        return pd.read_excel(file, sheet_name=None, engine='openpyxl')
+        excel_data = pd.ExcelFile(file, engine='openpyxl')
+        st.write("Available sheets:", excel_data.sheet_names)
+        return {sheet: pd.read_excel(excel_data, sheet_name=sheet) for sheet in excel_data.sheet_names}
     except Exception as e:
         st.error(f"Error loading Excel file: {e}")
         return None
@@ -84,10 +86,15 @@ master_url = "https://raw.githubusercontent.com/TinaMuuto/Master-Converter/9c2df
 library_file = download_file(library_url)
 master_file = download_file(master_url)
 
-library_data = load_excel(library_file)["Sheet1"] if library_file else None
-master_data = load_excel(master_file)["Sheet1"] if master_file else None
+library_data = load_excel(library_file)
+master_data = load_excel(master_file)
 
-if uploaded_file and library_data is not None and master_data is not None:
+if library_data:
+    st.write("Library Data Sheets:", list(library_data.keys()))
+if master_data:
+    st.write("Master Data Sheets:", list(master_data.keys()))
+
+if uploaded_file and library_data and master_data:
     user_data = load_excel(uploaded_file)
     
     if 'Article List' in user_data:
@@ -97,7 +104,7 @@ if uploaded_file and library_data is not None and master_data is not None:
         st.stop()
     
     if st.button("Download product list for presentations"):
-        merged_df = merge_library_data(user_df, library_data)
+        merged_df = merge_library_data(user_df, library_data['Sheet1'])
         buffer = generate_presentation_doc(merged_df)
         st.download_button("Download product list for presentations", buffer, file_name="product-list_presentation.docx")
     
@@ -106,7 +113,7 @@ if uploaded_file and library_data is not None and master_data is not None:
         st.download_button("Download order import file", buffer, file_name="order-import.xlsx")
     
     if st.button("Download masterdata and SKU mapping"):
-        buffer = generate_sku_mapping(user_df, library_data, master_data)
+        buffer = generate_sku_mapping(user_df, library_data['Sheet1'], master_data['Sheet'])
         st.download_button("Download SKU mapping", buffer, file_name="masterdata-SKUmapping.xlsx")
 else:
     st.warning("Please upload your product list. Library and Master Data are automatically downloaded.")
