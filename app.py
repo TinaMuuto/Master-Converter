@@ -75,6 +75,39 @@ def generate_order_import_file(user_df):
     return buffer
 
 def generate_sku_mapping(user_df, library_df, master_df):
+    # Debugging: Print column names before merging
+    st.write("User Data Columns:", user_df.columns.tolist())
+    st.write("Library Data Columns:", library_df.columns.tolist())
+    st.write("Master Data Columns:", master_df.columns.tolist())
+    
+    # Ensure columns are stripped of spaces
+    user_df.columns = user_df.columns.str.strip().str.lower().str.replace(' ', ' ')
+    library_df.columns = library_df.columns.str.strip().str.lower().str.replace(' ', ' ')
+    master_df.columns = master_df.columns.str.strip()
+    
+    # Validate necessary columns exist
+    if 'Article No.' not in user_df.columns:
+        st.error("Column 'Article No.' not found in uploaded file.")
+        st.stop()
+    if 'EUR item no.' not in library_df.columns:
+        st.error("Column 'EUR item no.' not found in Library Data.")
+        st.stop()
+    if 'ITEM NO.' not in master_df.columns:
+        st.error("Column 'ITEM NO.' not found in Master Data.")
+        st.stop()
+    
+    # Proceed with merging
+    mapping = user_df.merge(library_df, left_on='Article No.', right_on='EUR item no.', how='left')
+    mapping = mapping[['Quantity', 'Product', 'EUR item no.', 'GBP item no.', 'APMEA item no.', 'USD pattern no.']]
+    
+    master_data = user_df.merge(master_df, left_on='Article No.', right_on='ITEM NO.', how='left')
+    
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        mapping.to_excel(writer, sheet_name='Item number mapping', index=False)
+        master_data.to_excel(writer, sheet_name='Masterdata', index=False)
+    buffer.seek(0)
+    return buffer
     mapping = user_df.merge(library_df, left_on='Article No.', right_on='EUR item no.', how='left')
     mapping = mapping[['Quantity', 'Product', 'EUR item no.', 'GBP item no.', 'APMEA item no.', 'USD pattern no.']]
     
