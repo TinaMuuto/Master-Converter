@@ -3,12 +3,22 @@ import pandas as pd
 import openpyxl
 from io import BytesIO
 from docx import Document
+import requests
 
 def load_excel(file):
     try:
         return pd.read_excel(file, sheet_name=None, engine='openpyxl')
     except Exception as e:
         st.error(f"Error loading Excel file: {e}")
+        return None
+
+def download_file(url):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return BytesIO(response.content)
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error downloading file: {e}")
         return None
 
 def clean_column_names(df):
@@ -68,10 +78,14 @@ This tool is designed to **help you structure, validate, and enrich pCon product
 
 uploaded_file = st.file_uploader("Upload your product list (Excel)", type=['xlsx', 'xls'])
 
-if uploaded_file:
+library_url = "https://raw.githubusercontent.com/TinaMuuto/Master-Converter/9c2dfc70d2d8c44ffaa3b2e3e92f53d20b7a8b36/Library_data.xlsx"
+master_url = "https://raw.githubusercontent.com/TinaMuuto/Master-Converter/9c2dfc70d2d8c44ffaa3b2e3e92f53d20b7a8b36/Muuto_Master_Data_CON_January_2025_EUR.xlsx"
+
+library_data = load_excel(download_file(library_url))["Sheet1"] if download_file(library_url) else None
+master_data = load_excel(download_file(master_url))["Sheet1"] if download_file(master_url) else None
+
+if uploaded_file and library_data is not None and master_data is not None:
     user_data = load_excel(uploaded_file)
-    library_data = load_excel("/mnt/data/Library_data.xlsx")["Sheet1"]
-    master_data = load_excel("/mnt/data/Muuto_Master_Data_CON_January_2025_EUR.xlsx")["Sheet1"]
     
     if 'Article List' in user_data:
         user_df = clean_column_names(user_data['Article List'])
@@ -91,3 +105,5 @@ if uploaded_file:
     if st.button("Download masterdata and SKU mapping"):
         buffer = generate_sku_mapping(user_df, library_data, master_data)
         st.download_button("Download SKU mapping", buffer, file_name="masterdata-SKUmapping.xlsx")
+else:
+    st.warning("Please upload your product list. Library and Master Data are automatically downloaded.")
