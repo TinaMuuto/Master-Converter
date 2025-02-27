@@ -29,6 +29,19 @@ df = df[2:].reset_index(drop=True)
     return df[2:].reset_index(drop=True)
 
 def merge_library_data(user_df, library_df):
+    # Debugging: Print column names to check if expected columns exist
+    st.write("Library_data Columns:", library_df.columns)
+    st.write("User Data Columns:", user_df.columns)
+    
+    required_columns = ['EUR item no.', 'Product']
+    for col in required_columns:
+        if col not in library_df.columns:
+            st.error(f"Column '{col}' not found in Library_data. Available columns: {library_df.columns}")
+            st.stop()
+    
+    if 'Article No.' not in user_df.columns:
+        st.error("Column 'Article No.' not found in uploaded file.")
+        st.stop()
     merged_df = user_df.merge(library_df[['EUR item no.', 'Product']], left_on='Article No.', right_on='EUR item no.', how='left')
     merged_df['Output'] = merged_df['Quantity'].astype(str) + ' X ' + merged_df['Product'].fillna('Unknown')
     return merged_df[['Output']]
@@ -44,6 +57,14 @@ def generate_presentation_doc(merged_df):
     return buffer
 
 def generate_order_import_file(user_df):
+    # Debugging: Print column names to check if expected columns exist
+    st.write("User Data Columns (Order Import):", user_df.columns)
+    
+    required_columns = ['Quantity', 'Article No.']
+    for col in required_columns:
+        if col not in user_df.columns:
+            st.error(f"Column '{col}' not found in uploaded file. Available columns: {user_df.columns}")
+            st.stop()
     order_data = user_df[['Quantity', 'Article No.']].copy()
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
