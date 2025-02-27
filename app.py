@@ -93,6 +93,15 @@ master_data = load_excel(master_file)
 
 
 if uploaded_file and Library_data and master_data:
+    # Check if expected sheets exist
+    expected_library_sheet = 'Sheet1'
+    expected_master_sheet = 'Sheet'
+    if expected_library_sheet not in Library_data:
+        st.error(f"Expected sheet '{expected_library_sheet}' not found in Library_data. Available sheets: {list(Library_data.keys())}")
+        st.stop()
+    if expected_master_sheet not in master_data:
+        st.error(f"Expected sheet '{expected_master_sheet}' not found in master_data. Available sheets: {list(master_data.keys())}")
+        st.stop()
     user_data = load_excel(uploaded_file)
     
     if 'Article List' in user_data:
