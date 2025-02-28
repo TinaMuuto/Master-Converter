@@ -13,7 +13,7 @@ def load_data(file_path):
         return None
 
 def preprocess_user_data(df):
-    df = df.iloc[1:].reset_index(drop=True)  # Skip header row
+    df = df.iloc[1:].reset_index(drop=True)  # Start from row 2 (zero-indexed)
     df['Article No.'] = df.iloc[:, 17].astype(str)  # Column R
     df['Quantity'] = df.iloc[:, 30]  # Column AE
     df['Description'] = df.iloc[:, 4]  # Column E
@@ -42,6 +42,13 @@ def match_article_numbers(user_df, master_df):
     
     # Combine exact matches and fallback matches
     merged_df.loc[unmatched, 'PRODUCT DESCRIPTION'] = fallback_df['PRODUCT DESCRIPTION']
+    
+    # If still unmatched, try finding nearest match in master data based on index
+    for index, row in merged_df[merged_df['PRODUCT DESCRIPTION'].isna()].iterrows():
+        base_article = row['Base Article No.']
+        possible_matches = master_df[master_df['ITEM NO.'].str.startswith(base_article)]['PRODUCT DESCRIPTION']
+        if not possible_matches.empty:
+            merged_df.at[index, 'PRODUCT DESCRIPTION'] = possible_matches.iloc[0]
     
     # Create final description
     merged_df['Final Description'] = merged_df.apply(
