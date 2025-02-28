@@ -28,7 +28,7 @@ def load_library_data(library_path="Library_data.xlsx"):
         df = pd.read_excel(library_path, engine="openpyxl")
         # Konverter kolonnenavne til uppercase + strip
         df.columns = df.columns.str.strip().str.upper()
-        # Konverter 'EUR ITEM NO.' kolonner til uppercase indhold
+        # Konverter evt. 'EUR ITEM NO.' til uppercase i selve data
         if "EUR ITEM NO." in df.columns:
             df["EUR ITEM NO."] = df["EUR ITEM NO."].astype(str).str.strip().str.upper()
         return df
@@ -124,23 +124,24 @@ def preprocess_user_data(df):
 
 
 #####################
-# 3. PRÆSENTATIONSLISTE (WORD)
+# 3. PRÆSENTATIONSLISTE (WORD) - kun fuldt match, ingen fallback
 #####################
 
 def generate_presentation_word(df_user, df_library):
     """
     1) For hver række i df_user:
        - Forsøg direct match: 'ARTICLE_NO' i df_library['EUR ITEM NO.']
-       - Hvis match: "QUANTITY X PRODUCT" (fuldt match - ingen partial)
+       - Hvis match: "QUANTITY X PRODUCT"
        - Hvis intet match: "QUANTITY X SHORT_TEXT - VARIANT_TEXT" 
          (udelad '- VARIANT_TEXT' hvis variant_text er tom eller "LIGHT OPTION: OFF")
     2) Sortér efter (PRODUCT el. SHORT_TEXT) i stigende alfabetisk rækkefølge
     3) Returnér Word-fil som BytesIO
     """
+
     required_cols = ["PRODUCT", "EUR ITEM NO."]
     for col in required_cols:
         if col not in df_library.columns:
-            st.error(f"Library_data mangler kolonnen: '{col}' for at generere præsentationslisten.")
+            st.error(f"Library_data mangler kolonnen '{col}'. Kan ikke generere præsentationsliste.")
             return None
 
     # Opslagsdict: {EUR ITEM NO.: PRODUCT}
@@ -153,23 +154,21 @@ def generate_presentation_word(df_user, df_library):
         short_text = row["SHORT_TEXT"]
         variant_text = row["VARIANT_TEXT"]
 
-        # Kun fuldt match
         product_match = lookup_library.get(article_no)
 
         if product_match:
-            sort_key = product_match  # Sortér efter product
+            sort_key = product_match
             final_line = f"{quantity} X {product_match}"
         else:
-            sort_key = short_text     # Sortér efter short_text, da der ikke er match
+            sort_key = short_text
             if variant_text and variant_text != "LIGHT OPTION: OFF":
                 final_line = f"{quantity} X {short_text} - {variant_text}"
             else:
                 final_line = f"{quantity} X {short_text}"
 
-        # Vi gemmer (sort_key.upper(), final_line.upper()) så sorteres case-insensitivt
         lines_info.append((sort_key.upper(), final_line.upper()))
 
-    # Sorter linjerne alfabetisk på sort_key
+    # Alfabetisk sortering på sort_key
     lines_info.sort(key=lambda x: x[0])
 
     # Opret Word-dokument i hukommelsen
@@ -203,7 +202,7 @@ def generate_order_import_excel(df_user):
 
 
 #####################
-# 5. SKU MAPPING & MASTERDATA
+# 5. SKU MAPPING & MASTERDATA (med fallback)
 #####################
 
 def generate_sku_masterdata_excel(df_user, df_library, df_master):
@@ -229,15 +228,8 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     """
 
     # =============== ITEM NUMBER MAPPING ===============
-    # Tjek nødvendige kolonner
-    lib_required = ["PRODUCT", "EUR ITEM NO.", "GBP ITEM NO.", 
-                    "APMEA ITEM NO.", "USD PATTERN NO.", "MATCH STATUS"]
-    # Lav en liste over evt. manglende kolonner:
-    missing_cols = [c for c in lib_required if c not in df_library.columns]
-    if missing_cols:
-        st.warning(f"Følgende kolonner mangler i Library_data (ingen KeyError, men de vil ikke blive opdateret): {missing_cols}")
 
-    # Omdøb kun dem, der reelt findes
+    # Omdøb library-kolonner (ingen warnings, bare ignore)
     rename_map = {
         "PRODUCT": "LIB_PRODUCT",
         "EUR ITEM NO.": "LIB_EUR_ITEM_NO",
@@ -246,49 +238,53 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         "USD PATTERN NO.": "LIB_USD_PATTERN_NO",
         "MATCH STATUS": "LIB_MATCH_STATUS"
     }
-    valid_renames = {}
-    for old_col, new_col in rename_map.items():
-        if old_col in df_library.columns:
-            valid_renames[old_col] = new_col
+    # errors="ignore" => Hvis en nøgle i rename_map ikke findes, springes den bare over
+    df_library_renamed = df_library.rename(columns=rename_map, errors="ignore")
 
-    df_library_renamed = df_library.rename(columns=valid_renames)
+    # Direct merge
+    if "LIB_EUR_ITEM_NO" in df_library_renamed.columns:
+        merged_direct = pd.merge(
+            df_user,
+            df_library_renamed,
+            how="left",
+            left_on="ARTICLE_NO",
+            right_on="LIB_EUR_ITEM_NO"
+        )
+    else:
+        # Ingen EUR ITEM NO. => alt er fallback
+        merged_direct = df_user.copy()
 
-    merged_direct = pd.merge(
-        df_user,
-        df_library_renamed,
-        how="left",
-        left_on="ARTICLE_NO",
-        right_on="LIB_EUR_ITEM_NO" if "LIB_EUR_ITEM_NO" in df_library_renamed.columns else None
-    )
-
-    # fallback for item number mapping
+    # Tjek om vi har LIB_PRODUCT => hvis ikke, er alt unmatched
     if "LIB_PRODUCT" in merged_direct.columns:
         mask_no_direct = merged_direct["LIB_PRODUCT"].isna()
     else:
-        # Hvis "LIB_PRODUCT" ikke findes, er alt unmatched
         mask_no_direct = pd.Series([True]*len(merged_direct), index=merged_direct.index)
 
     fallback_rows = merged_direct.loc[mask_no_direct].copy()
     fallback_rows["SHORT_ARTICLE"] = fallback_rows["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
 
-    fallback_merged = pd.merge(
-        fallback_rows,
-        df_library_renamed,
-        how="left",
-        left_on="SHORT_ARTICLE",
-        right_on="LIB_EUR_ITEM_NO" if "LIB_EUR_ITEM_NO" in df_library_renamed.columns else None
-    )
+    if "LIB_EUR_ITEM_NO" in df_library_renamed.columns:
+        fallback_merged = pd.merge(
+            fallback_rows,
+            df_library_renamed,
+            how="left",
+            left_on="SHORT_ARTICLE",
+            right_on="LIB_EUR_ITEM_NO"
+        )
+    else:
+        fallback_merged = fallback_rows.copy()  # Ingen kolonner fra library at merge
 
-    # Her sætter vi kun kolonner, der reelt findes i fallback_merged
-    columns_to_update = ["LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO",
-                         "LIB_APMEA_ITEM_NO", "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"]
+    # Kopier de kolonner, vi gerne vil overføre
+    columns_to_update = [
+        "LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO",
+        "LIB_APMEA_ITEM_NO", "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"
+    ]
     for col in columns_to_update:
         if col in fallback_merged.columns:
             merged_direct.loc[mask_no_direct, col] = fallback_merged[col].values
-        else:
-            st.warning(f"Kolonnen '{col}' findes ikke i fallback_merged. Springer over for item number mapping.")
+        # Ingen warning - bare skip
 
-    # Byg item_number_mapping_df
+    # Byg "Item number mapping"
     item_number_mapping_df = pd.DataFrame()
     item_number_mapping_df["Quantity in setting"] = merged_direct["QUANTITY"]
     item_number_mapping_df["Article No."] = merged_direct["ARTICLE_NO"]
@@ -301,14 +297,13 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     item_number_mapping_df["USD pattern no."] = merged_direct.get("LIB_USD_PATTERN_NO", None)
     item_number_mapping_df["Match status"] = merged_direct.get("LIB_MATCH_STATUS", None)
 
-
     # =============== MASTER DATA EXPORT ===============
+    # Direct + fallback merges
     if "ITEM NO." not in df_master.columns:
-        st.warning("Masterdata-filen mangler kolonnen 'ITEM NO.'. Ingen KeyError, men matches bliver tomme.")
-        # Lav et tomt master_data_export_df
+        # Ingen matches mulige
         master_data_export_df = pd.DataFrame(columns=["Article No.", "Short Text", "Variant text"] + df_master.columns.tolist())
     else:
-        # Direct + fallback merging
+        # Direct
         master_direct = pd.merge(
             df_user,
             df_master,
@@ -316,7 +311,6 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             left_on="ARTICLE_NO",
             right_on="ITEM NO."
         )
-
         mask_no_direct_master = master_direct["ITEM NO."].isna()
         fallback_master_rows = master_direct.loc[mask_no_direct_master].copy()
         fallback_master_rows["SHORT_ARTICLE"] = fallback_master_rows["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
@@ -329,15 +323,12 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             right_on="ITEM NO."
         )
 
-        # Kopiér kun kolonner, der findes i fallback_master_merged
+        # Kopier kun kolonner, der findes
         for col in df_master.columns:
             if col in fallback_master_merged.columns:
                 master_direct.loc[mask_no_direct_master, col] = fallback_master_merged[col].values
-            else:
-                st.warning(f"Kolonnen '{col}' findes ikke i fallback_master_merged. Springes over for master fallback.")
 
         master_direct.drop_duplicates(inplace=True)
-        # Omdøb bruger-kolonner
         master_direct.rename(columns={
             "ARTICLE_NO": "Article No.",
             "SHORT_TEXT": "Short Text",
@@ -349,7 +340,7 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         other_cols = [c for c in master_direct.columns if c not in front_cols]
         master_data_export_df = master_direct[front_cols + other_cols]
 
-    # Skriv 2 ark i én Excel
+    # Skriv 2 ark til én Excel
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         item_number_mapping_df.to_excel(writer, sheet_name="Item number mapping", index=False)
@@ -435,7 +426,7 @@ def main():
                     file_name="order-import.xlsx"
                 )
 
-            # Knap 3: SKU mapping & masterdata (med partial fallback)
+            # Knap 3: SKU mapping & masterdata (med fallback)
             if st.button("Generate SKU mapping & masterdata"):
                 sku_buffer = generate_sku_masterdata_excel(df_user, df_library, df_master)
                 if sku_buffer:
