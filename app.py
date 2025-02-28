@@ -130,10 +130,11 @@ def generate_presentation_word(df_user, df_library):
     """
     1) For hver række i df_user:
        - Forsøg direct match: 'ARTICLE_NO' i df_library['EUR ITEM NO.']
-       - Hvis match: "QUANTITY X PRODUCT"
+       - Hvis MATCH: "QUANTITY X PRODUCT" (fuldstændigt match)
        - Hvis intet match: "QUANTITY X SHORT_TEXT - VARIANT_TEXT"
          (udelad '- VARIANT_TEXT' hvis variant_text er tom eller "LIGHT OPTION: OFF")
     2) Returnér Word-fil som BytesIO
+    3) Nu UDEN delvist match (ingen split på "-").
     """
     required_cols = ["PRODUCT", "EUR ITEM NO."]
     for col in required_cols:
@@ -141,7 +142,7 @@ def generate_presentation_word(df_user, df_library):
             st.error(f"Library_data mangler kolonne: {col}")
             return None
 
-    # Opslagsdict
+    # Opslagsdict: {EUR ITEM NO.: PRODUCT}
     lookup_library = df_library.set_index("EUR ITEM NO.")["PRODUCT"].to_dict()
 
     word_lines = []
@@ -151,20 +152,19 @@ def generate_presentation_word(df_user, df_library):
         short_text = row["SHORT_TEXT"]
         variant_text = row["VARIANT_TEXT"]
 
+        # Kun fuldt match
         product_match = lookup_library.get(article_no)
-        if not product_match:
-            short_article = article_no.split('-')[0].strip().upper()
-            product_match = lookup_library.get(short_article)
 
         if product_match:
             text_line = f"{quantity} X {product_match}"
         else:
-            # fallback
+            # fallback til short_text/variant
             if variant_text and variant_text != "LIGHT OPTION: OFF":
                 text_line = f"{quantity} X {short_text} - {variant_text}"
             else:
                 text_line = f"{quantity} X {short_text}"
 
+        # Alt i uppercase
         text_line = text_line.upper()
         word_lines.append(text_line)
 
@@ -206,33 +206,34 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     """
     Genererer 2 ark:
     1) "Item number mapping":
-       Kolonner:
-         - Quantity in setting
-         - Article No.
-         - Short Text
-         - Variant text
-         - Product in setting
-         - EUR item no.
-         - GBP item no.
-         - APMEA item no.
-         - USD pattern no.
-         - Match status
+       - Kolonner: 
+         Quantity in setting
+         Article No.
+         Short Text
+         Variant text
+         Product in setting
+         EUR item no.
+         GBP item no.
+         APMEA item no.
+         USD pattern no.
+         Match status
+
+       (Her bruger vi fortsat fallback
+        for delvist match via split på "-")
 
     2) "Master data export":
-       - Indeholder ALLE kolonner fra df_master for de matchede rækker
-         + 'Article No.', 'Short Text', 'Variant text' fra brugerfilen 
-         (så man kan se, hvad der blev matchet).
+       - Alle kolonner fra df_master (ITEM NO., DESCRIPTION, osv.)
+       - Dertil: 'Article No.', 'Short Text', 'Variant text' fra brugerfilen
+         (med direct + fallback match)
     """
 
-    # =============== 1) ITEM NUMBER MAPPING ===============
-    required_lib_cols = ["PRODUCT", "EUR ITEM NO.", "GBP ITEM NO.", 
-                         "APMEA ITEM NO.", "USD PATTERN NO.", "MATCH STATUS"]
+    # =============== ITEM NUMBER MAPPING ===============
+    required_lib_cols = ["PRODUCT", "EUR ITEM NO.", "GBP ITEM NO.", "APMEA ITEM NO.", "USD PATTERN NO.", "MATCH STATUS"]
     for col in required_lib_cols:
         if col not in df_library.columns:
             st.error(f"Library_data mangler kolonnen {col} til SKU mapping.")
             return None
 
-    # Omdøb library-kolonner
     df_library_renamed = df_library.rename(columns={
         "PRODUCT": "LIB_PRODUCT",
         "EUR ITEM NO.": "LIB_EUR_ITEM_NO",
@@ -242,7 +243,6 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         "MATCH STATUS": "LIB_MATCH_STATUS"
     })
 
-    # Direct merge
     merged_direct = pd.merge(
         df_user,
         df_library_renamed,
@@ -251,24 +251,23 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         right_on="LIB_EUR_ITEM_NO"
     )
 
-    # Fallback
+    # Fallback for item number mapping
     mask_no_direct = merged_direct["LIB_PRODUCT"].isna()
     fallback_rows = merged_direct.loc[mask_no_direct].copy()
     fallback_rows["SHORT_ARTICLE"] = fallback_rows["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
 
     fallback_merged = pd.merge(
-        fallback_rows.drop(columns=["LIB_PRODUCT","LIB_EUR_ITEM_NO","LIB_GBP_ITEM_NO",
-                                    "LIB_APMEA_ITEM_NO","LIB_USD_PATTERN_NO","LIB_MATCH_STATUS"]),
+        fallback_rows,
         df_library_renamed,
         how="left",
         left_on="SHORT_ARTICLE",
         right_on="LIB_EUR_ITEM_NO"
     )
 
-    for col in ["LIB_PRODUCT","LIB_EUR_ITEM_NO","LIB_GBP_ITEM_NO","LIB_APMEA_ITEM_NO","LIB_USD_PATTERN_NO","LIB_MATCH_STATUS"]:
+    for col in ["LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO", 
+                "LIB_APMEA_ITEM_NO", "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"]:
         merged_direct.loc[mask_no_direct, col] = fallback_merged[col].values
 
-    # Opret "Item number mapping"-DataFrame
     item_number_mapping_df = pd.DataFrame({
         "Quantity in setting": merged_direct["QUANTITY"],
         "Article No.": merged_direct["ARTICLE_NO"],
@@ -282,64 +281,48 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         "Match status": merged_direct["LIB_MATCH_STATUS"]
     })
 
-    # =============== 2) MASTER DATA EXPORT ===============
-
+    # =============== MASTER DATA EXPORT ===============
     if "ITEM NO." not in df_master.columns:
         st.error("Masterdata-filen mangler kolonnen 'ITEM NO.'")
         return None
 
-    # Vi laver to merges, ligesom ovenfor (direct + fallback), 
-    # så vi kan få alt fra df_master + "Article No.","Short Text","Variant text" fra brugeren.
-
-    # 2A. Direct merge
+    # Direct + fallback merging
     master_direct = pd.merge(
         df_user, 
-        df_master, 
+        df_master,
         how="left",
         left_on="ARTICLE_NO", 
         right_on="ITEM NO."
     )
-    # Identificer rækker uden direct match
     mask_no_direct_master = master_direct["ITEM NO."].isna()
 
-    # 2B. Fallback: splitted article
     fallback_master_rows = master_direct.loc[mask_no_direct_master].copy()
     fallback_master_rows["SHORT_ARTICLE"] = fallback_master_rows["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
 
     fallback_master_merged = pd.merge(
-        fallback_master_rows.drop(columns=[col for col in df_master.columns if col != "ITEM NO."]), 
+        fallback_master_rows,
         df_master,
         how="left",
         left_on="SHORT_ARTICLE",
         right_on="ITEM NO."
     )
 
-    # Opdatér de rækker, der var unmatched
     for col in df_master.columns:
         master_direct.loc[mask_no_direct_master, col] = fallback_master_merged[col].values
 
-    # Nu indeholder master_direct for hver række i df_user:
-    # - "ARTICLE_NO", "SHORT_TEXT", "VARIANT_TEXT", "QUANTITY" + alle kolonner fra master
-    # Saml i en endelig DataFrame
-    master_data_export_df = master_direct.copy()
-
-    # Fjern duplicates (hvis nogen)
-    master_data_export_df.drop_duplicates(inplace=True)
-
-    # Omnavngiv brugerkolonner, så de fremgår pænt i finalen
-    master_data_export_df.rename(columns={
+    master_direct.drop_duplicates(inplace=True)
+    master_direct.rename(columns={
         "ARTICLE_NO": "Article No.",
         "SHORT_TEXT": "Short Text",
         "VARIANT_TEXT": "Variant text"
     }, inplace=True)
 
-    # Flyt de tre kolonner op forrest i DataFrame
+    # Flyt "Article No.", "Short Text", "Variant text" forrest
     front_cols = ["Article No.", "Short Text", "Variant text"]
-    # Resten af master-kolonnerne (i den rækkefølge, de står i df_master + QUANTITY mv.)
-    other_cols = [c for c in master_data_export_df.columns if c not in front_cols]
-    master_data_export_df = master_data_export_df[front_cols + other_cols]
+    other_cols = [c for c in master_direct.columns if c not in front_cols]
+    master_data_export_df = master_direct[front_cols + other_cols]
 
-    # Opret en BytesIO med 2 ark
+    # Skriv 2 ark i én Excel
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         item_number_mapping_df.to_excel(writer, sheet_name="Item number mapping", index=False)
@@ -406,7 +389,7 @@ def main():
             if df_user is None:
                 return  # Stop, hvis preprocess fejlede
 
-            # Knap 1: Word-fil
+            # Knap 1: Word-fil (uden partial match)
             if st.button("Generate List for presentations"):
                 word_buffer = generate_presentation_word(df_user, df_library)
                 if word_buffer:
