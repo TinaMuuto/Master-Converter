@@ -91,10 +91,10 @@ def match_article_numbers(user_df, master_df, library_df):
     
     # If still no match, adjust based on output type
     merged_df['Masterdata Output'] = merged_df['Base Article No.'].fillna('') + " - " + merged_df['Variant'].fillna('')
-    merged_df['Word Output'] = merged_df['Quantity'].astype(str) + " X " + merged_df['Short text'].fillna('')
-    
-    # Include Variant in Word Output if not empty
-    merged_df.loc[merged_df['Variant'] != '', 'Word Output'] += " - " + merged_df['Variant']
+    merged_df['Word Output'] = merged_df.apply(
+        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['Variant'] if row['Variant'] not in ['', 'Light Option: Off'] else ''}"
+        if pd.notna(row['PRODUCT']) else
+        f"{row['Quantity']} X {row['Short text']} {' - ' + row['Variant'] if row['Variant'] not in ['', 'Light Option: Off'] else ''}", axis=1)
     
     return merged_df[['Quantity', 'Article No.', 'PRODUCT', 'Masterdata Output', 'Word Output']]
 
@@ -129,27 +129,6 @@ This tool is designed to **help you structure, validate, and enrich pCon product
 2. **Upload your pCon file** to the app.  
 3. **Click one of the three buttons** to generate the file you need.  
 4. **Once generated, a new button will appear** for you to download the file.  
-
-### **What can the app generate?**
-#### 1. Product list for presentations
-A Word file with product quantities and descriptions for easy copy-pasting into PowerPoint.
-
-**Example output:**
-- 1 X 70/70 Table / 170 X 85 CM / 67 X 33.5" - Solid Oak/Anthracite Black  
-- 1 X Fiber Armchair / Swivel Base - Refine Leather Cognac/Anthracite Black  
-
-#### 2. Product list for order import
-A file formatted for direct import into the partner platform. This allows you to:
-- Visualize the products  
-- Place a quote/order  
-- Pass the list to Customer Care to avoid manual entry  
-
-#### 3. Product SKU mapping  
-An Excel file with two sheets:
-- **Product SKU mapping** – A list of products in the uploaded pCon setting with corresponding item numbers for EUR, UK, APMEA, and pattern numbers for the US.  
-- **Master data export** – A full data export of the uploaded products for project documentation.  
-
-[Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
 """)
 
 uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'csv'])
