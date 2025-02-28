@@ -92,9 +92,9 @@ def match_article_numbers(user_df, master_df, library_df):
    # If still no match, adjust based on output type
     merged_df['Masterdata Output'] = (merged_df['Base Article No.'].fillna('') + " - " + merged_df['Variant'].fillna('')).str.upper()
     merged_df['Word Output'] = merged_df.apply(
-        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['Variant'] if row['Variant'] not in ['', 'LIGHT OPTION: OFF'] else ''}"
+        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['Variant'] if row['Variant'] not in ['', 'Light Option: Off'] else ''}"
         if pd.notna(row['PRODUCT']) else
-        f"{row['Quantity']} X {row['Short text']} {' - ' + row['Variant'] if row['Variant'] not in ['', 'LIGHT OPTION: OFF'] else ''}", axis=1).str.upper()
+        f"{row['Quantity']} X {row['Short text']} {' - ' + row['Variant'] if row['Variant'] not in ['', 'Light Option: Off'] else ''}", axis=1).str.upper()
     
     return merged_df[['Quantity', 'Article No.', 'PRODUCT', 'Masterdata Output', 'Word Output']]
 
