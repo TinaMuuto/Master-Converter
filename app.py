@@ -63,7 +63,7 @@ def match_article_numbers(user_df, master_df, library_df):
     
     # Exact match in Library Data if no match in Master Data
     unmatched = merged_df['PRODUCT'].isna()
-    library_match = user_df[unmatched].merge(
+    library_match = user_df.loc[unmatched].merge(
         library_df[['EUR ITEM NO.', 'PRODUCT']],
         left_on='Article No.', 
         right_on='EUR ITEM NO.', 
@@ -73,7 +73,7 @@ def match_article_numbers(user_df, master_df, library_df):
     
     # If no match, find the closest match using Base Article No.
     unmatched = merged_df['PRODUCT'].isna()
-    fallback_df = user_df[unmatched].merge(
+    fallback_df = user_df.loc[unmatched].merge(
         master_df[['ITEM NO.', 'PRODUCT']], 
         left_on='Base Article No.', 
         right_on='ITEM NO.', 
@@ -81,7 +81,7 @@ def match_article_numbers(user_df, master_df, library_df):
     )
     merged_df.loc[unmatched, 'PRODUCT'] = fallback_df['PRODUCT']
     
-    library_fallback = user_df[unmatched].merge(
+    library_fallback = user_df.loc[unmatched].merge(
         library_df[['EUR ITEM NO.', 'PRODUCT']],
         left_on='Base Article No.', 
         right_on='EUR ITEM NO.', 
@@ -104,42 +104,35 @@ def match_article_numbers(user_df, master_df, library_df):
     
     return merged_df[['Quantity', 'Article No.', 'PRODUCT', 'Masterdata Output', 'Word Output']]
 
-# Load master and library data
-master_data = load_data("Muuto_Master_Data_CON_January_2025_EUR.xlsx")
-library_data = load_data("Library_data.xlsx")
-
 st.title('Muuto Product List Generator')
 
 st.write("""
-This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
-
 ### **How it works:**  
 1. **Export your product list from pCon** (formatted like the example file).  
 2. **Upload your pCon file** to the app.  
 3. **Click one of the three buttons** to generate the file you need.  
 4. **Once generated, a new button will appear** for you to download the file.  
+
+### **What can the app generate?**
+#### 1. Product list for presentations
+A Word file with product quantities and descriptions for easy copy-pasting into PowerPoint.
+
+**Example output:**
+- 1 X 70/70 Table / 170 X 85 CM / 67 X 33.5" - Solid Oak/Anthracite Black  
+- 1 X Fiber Armchair / Swivel Base - Refine Leather Cognac/Anthracite Black  
+
+#### 2. Product list for order import
+A file formatted for direct import into the partner platform. This allows you to:
+- Visualize the products  
+- Place a quote/order  
+- Pass the list to Customer Care to avoid manual entry  
+
+#### 3. Product SKU mapping  
+An Excel file with two sheets:
+- **Product SKU mapping** – A list of products in the uploaded pCon setting with corresponding item numbers for EUR, UK, APMEA, and pattern numbers for the US.  
+- **Master data export** – A full data export of the uploaded products for project documentation.  
+
+[Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
 """)
 
-uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'csv'])
-if uploaded_file and master_data is not None:
-    user_data = load_uploaded_file(uploaded_file)
-    if isinstance(user_data, pd.ExcelFile) and 'Article List' in user_data.sheet_names:
-        uploaded_df = pd.read_excel(user_data, sheet_name='Article List')
-    else:
-        uploaded_df = user_data
-    
-    if uploaded_df is not None:
-        user_df = preprocess_user_data(uploaded_df)
-        matched_df = match_article_numbers(user_df, master_data, library_data)
-        
-        if st.button("Generate product list for presentations"):
-            buffer = generate_word_file(matched_df)
-            st.download_button("Download file", buffer, file_name="product-list_presentation.docx")
-        
-        if st.button("Generate order import file"):
-            buffer = generate_excel_file(matched_df[['Quantity', 'Article No.']], include_headers=False)
-            st.download_button("Download file", buffer, file_name="order-import.xlsx")
-        
-        if st.button("Generate masterdata and SKU mapping"):
-            buffer = generate_excel_file(matched_df[['Quantity', 'Article No.', 'Masterdata Output']])
-            st.download_button("Download file", buffer, file_name="masterdata-SKUmapping.xlsx")
+uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'xls', 'csv'])
