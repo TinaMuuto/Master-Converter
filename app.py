@@ -41,7 +41,7 @@ def load_excel(file):
         return None
 
 def extract_fixed_columns(df):
-    df = df.iloc[2:].reset_index(drop=True)  # Start fra række 3
+   df = df.iloc[1:].reset_index(drop=True)  # Starter fra række 2
     article_no_col = df.iloc[:, 17]  # Kolonne R
     quantity_col = df.iloc[:, 30]  # Kolonne AE
     return pd.DataFrame({'Article No.': article_no_col, 'Quantity': quantity_col})
