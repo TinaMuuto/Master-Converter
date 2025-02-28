@@ -70,7 +70,6 @@ def match_article_numbers(user_df, master_df, library_df):
     master_df['ITEM NO.'] = master_df['ITEM NO.'].astype(str).str.upper()
     library_df['EUR ITEM NO.'] = library_df['EUR ITEM NO.'].astype(str).str.upper()
     
-    # Exact match in Master Data
     merged_df = user_df.merge(
         master_df[['ITEM NO.', 'PRODUCT']], 
         left_on='Article No.', 
@@ -78,7 +77,6 @@ def match_article_numbers(user_df, master_df, library_df):
         how='left'
     )
     
-    # Exact match in Library Data if no match in Master Data
     unmatched = merged_df['PRODUCT'].isna()
     library_match = user_df.loc[unmatched].merge(
         library_df[['EUR ITEM NO.', 'PRODUCT']],
@@ -88,7 +86,6 @@ def match_article_numbers(user_df, master_df, library_df):
     )
     merged_df.loc[unmatched, 'PRODUCT'] = library_match['PRODUCT']
     
-    # If no match, find the closest match using Base Article No.
     unmatched = merged_df['PRODUCT'].isna()
     fallback_df = user_df.loc[unmatched].merge(
         master_df[['ITEM NO.', 'PRODUCT']], 
@@ -106,12 +103,10 @@ def match_article_numbers(user_df, master_df, library_df):
     )
     merged_df.loc[unmatched, 'PRODUCT'] = library_fallback['PRODUCT']
     
-    # Ensure correct variant handling when no exact match is found
     merged_df['FINAL VARIANT'] = merged_df.apply(
-        lambda row: row['Variant'] if row['Variant'] not in ['', 'LIGHT OPTION: OFF'] else row['Short text'], axis=1
+        lambda row: row['Variant'] if pd.notna(row['PRODUCT']) and row['Variant'] not in ['', 'Light Option: Off'] else row['Short text'], axis=1
     )
     
-    # If still no match, adjust based on output type
     merged_df['Masterdata Output'] = (merged_df['Base Article No.'].fillna('') + " - " + merged_df['FINAL VARIANT'].fillna('')).str.upper()
     merged_df['Word Output'] = merged_df.apply(
         lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'Light Option: Off'] else ''}"
@@ -121,11 +116,22 @@ def match_article_numbers(user_df, master_df, library_df):
     
     return merged_df[['Quantity', 'Article No.', 'PRODUCT', 'Masterdata Output', 'Word Output']]
 
+st.title('Muuto Product List Generator')
+
+st.write("""
+This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
+
+### **How it works:**  
+1. **Export your product list from pCon** (formatted like the example file).  
+2. **Upload your pCon file** to the app.  
+3. **Click one of the three buttons** to generate the file you need.  
+4. **Once generated, a new button will appear** for you to download the file.  
+""")
+
 uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'xls', 'csv'])
 if uploaded_file:
     master_data = load_data("Muuto_Master_Data_CON_January_2025_EUR.xlsx")
     library_data = load_data("Library_data.xlsx")
-    
     user_data = load_uploaded_file(uploaded_file)
     if isinstance(user_data, pd.ExcelFile) and 'Article List' in user_data.sheet_names:
         uploaded_df = pd.read_excel(user_data, sheet_name='Article List')
