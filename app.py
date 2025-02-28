@@ -29,11 +29,11 @@ def load_uploaded_file(uploaded_file):
 
 def preprocess_user_data(df):
     df = df.iloc[1:].reset_index(drop=True)  # Start from row 2 (zero-indexed)
-    df['Article No.'] = df.iloc[:, 17].astype(str)  # Column R
+    df['Article No.'] = df.iloc[:, 17].astype(str).str.upper()  # Column R
     df['Quantity'] = df.iloc[:, 30]  # Column AE
-    df['Variant'] = df.iloc[:, 4].fillna('')  # Column E
-    df['Short text'] = df.iloc[:, 2].fillna('')  # Column C
-    df['Base Article No.'] = df['Article No.'].str.split('-').str[0]  # Base article number for fallback
+    df['Variant'] = df.iloc[:, 4].fillna('').str.upper()  # Column E
+    df['Short text'] = df.iloc[:, 2].fillna('').str.upper()  # Column C
+    df['Base Article No.'] = df['Article No.'].str.split('-').str[0].str.upper()  # Base article number for fallback
     return df[['Article No.', 'Quantity', 'Variant', 'Short text', 'Base Article No.']]
 
 def match_article_numbers(user_df, master_df, library_df):
@@ -50,8 +50,8 @@ def match_article_numbers(user_df, master_df, library_df):
             st.error(f"Library Data file is missing required column: '{col}'")
             return pd.DataFrame()
     
-    master_df['ITEM NO.'] = master_df['ITEM NO.'].astype(str)
-    library_df['EUR ITEM NO.'] = library_df['EUR ITEM NO.'].astype(str)
+    master_df['ITEM NO.'] = master_df['ITEM NO.'].astype(str).str.upper()
+    library_df['EUR ITEM NO.'] = library_df['EUR ITEM NO.'].astype(str).str.upper()
     
     # Exact match in Master Data
     merged_df = user_df.merge(
@@ -89,31 +89,20 @@ def match_article_numbers(user_df, master_df, library_df):
     )
     merged_df.loc[unmatched, 'PRODUCT'] = library_fallback['PRODUCT']
     
-   # If still no match, adjust based on output type
-    merged_df['Masterdata Output'] = (merged_df['Base Article No.'].fillna('') + " - " + merged_df['Variant'].fillna('')).str.upper()
+    # Ensure correct variant handling when no exact match is found
+    merged_df['FINAL VARIANT'] = merged_df.apply(
+        lambda row: row['Variant'] if row['Variant'] not in ['', 'LIGHT OPTION: OFF'] else row['Short text'], axis=1
+    )
+    
+    # If still no match, adjust based on output type
+    merged_df['Masterdata Output'] = (merged_df['Base Article No.'].fillna('') + " - " + merged_df['FINAL VARIANT'].fillna('')).str.upper()
     merged_df['Word Output'] = merged_df.apply(
-        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['Variant'] if row['Variant'] not in ['', 'Light Option: Off'] else ''}"
+        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'LIGHT OPTION: OFF'] else ''}"
         if pd.notna(row['PRODUCT']) else
-        f"{row['Quantity']} X {row['Short text']} {' - ' + row['Variant'] if row['Variant'] not in ['', 'Light Option: Off'] else ''}", axis=1).str.upper()
+        f"{row['Quantity']} X {row['Short text']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'LIGHT OPTION: OFF'] else ''}", axis=1
+    ).str.upper()
     
     return merged_df[['Quantity', 'Article No.', 'PRODUCT', 'Masterdata Output', 'Word Output']]
-
-def generate_word_file(merged_df):
-    buffer = BytesIO()
-    doc = Document()
-    doc.add_heading('Product List for Presentations', level=1)
-    for row in merged_df['Word Output']:
-        doc.add_paragraph(row)
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-def generate_excel_file(merged_df, include_headers=True):
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        merged_df.to_excel(writer, index=False, header=include_headers)
-    buffer.seek(0)
-    return buffer
 
 # Load master and library data
 master_data = load_data("Muuto_Master_Data_CON_January_2025_EUR.xlsx")
