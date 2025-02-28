@@ -22,9 +22,7 @@ def load_uploaded_file(uploaded_file):
             except pd.errors.ParserError:
                 return pd.read_csv(uploaded_file, sep=',', engine='python')
         else:
-            df = pd.ExcelFile(uploaded_file, engine='openpyxl')
-            df.sheet_names = [sheet.strip() for sheet in df.sheet_names]  # Strip sheet names
-            return df
+            return pd.ExcelFile(uploaded_file, engine='openpyxl')
     except Exception as e:
         st.error(f"Error loading file: {e}")
         return None
@@ -86,16 +84,17 @@ def match_article_numbers(user_df, master_df, library_df):
     )
     merged_df.loc[unmatched, 'Product'] = library_fallback['Product']
     
-    # If still no match, append Short text from Column C in the uploaded file
-    merged_df.loc[merged_df['Product'].isna(), 'Product'] = merged_df['Base Article No.'] + " - " + merged_df['Short text']
+    # If still no match, adjust based on output type
+    merged_df['Masterdata Output'] = merged_df['Base Article No.'] + " - " + merged_df['Variant']
+    merged_df['Word Output'] = merged_df['Quantity'].astype(str) + " X " + merged_df['Short text']
     
-    return merged_df[['Quantity', 'Article No.', 'Product']]
+    return merged_df[['Quantity', 'Article No.', 'Product', 'Masterdata Output', 'Word Output']]
 
 def generate_word_file(merged_df):
     buffer = BytesIO()
     doc = Document()
     doc.add_heading('Product List for Presentations', level=1)
-    for row in merged_df['Product']:
+    for row in merged_df['Word Output']:
         doc.add_paragraph(row)
     doc.save(buffer)
     buffer.seek(0)
@@ -145,5 +144,5 @@ if uploaded_file and master_data is not None:
             st.download_button("Download file", buffer, file_name="order-import.xlsx")
         
         if st.button("Generate masterdata and SKU mapping"):
-            buffer = generate_excel_file(matched_df)
+            buffer = generate_excel_file(matched_df[['Quantity', 'Article No.', 'Masterdata Output']])
             st.download_button("Download file", buffer, file_name="masterdata-SKUmapping.xlsx")
