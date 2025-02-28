@@ -36,6 +36,23 @@ def preprocess_user_data(df):
     df['Base Article No.'] = df['Article No.'].str.split('-').str[0].str.upper()  # Base article number for fallback
     return df[['Article No.', 'Quantity', 'Variant', 'Short text', 'Base Article No.']]
 
+def generate_word_file(merged_df):
+    buffer = BytesIO()
+    doc = Document()
+    doc.add_heading('Product List for Presentations', level=1)
+    for row in merged_df['Word Output']:
+        doc.add_paragraph(row)
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+def generate_excel_file(merged_df, include_headers=True):
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        merged_df.to_excel(writer, index=False, header=include_headers)
+    buffer.seek(0)
+    return buffer
+
 def match_article_numbers(user_df, master_df, library_df):
     required_master_cols = ['ITEM NO.', 'PRODUCT']
     required_library_cols = ['EUR ITEM NO.', 'PRODUCT']
@@ -97,42 +114,36 @@ def match_article_numbers(user_df, master_df, library_df):
     # If still no match, adjust based on output type
     merged_df['Masterdata Output'] = (merged_df['Base Article No.'].fillna('') + " - " + merged_df['FINAL VARIANT'].fillna('')).str.upper()
     merged_df['Word Output'] = merged_df.apply(
-        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'LIGHT OPTION: OFF'] else ''}"
+        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'Light Option: Off'] else ''}"
         if pd.notna(row['PRODUCT']) else
-        f"{row['Quantity']} X {row['Short text']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'LIGHT OPTION: OFF'] else ''}", axis=1
+        f"{row['Quantity']} X {row['Short text']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'Light Option: Off'] else ''}", axis=1
     ).str.upper()
     
     return merged_df[['Quantity', 'Article No.', 'PRODUCT', 'Masterdata Output', 'Word Output']]
 
-st.title('Muuto Product List Generator')
-
-st.write("""
-### **How it works:**  
-1. **Export your product list from pCon** (formatted like the example file).  
-2. **Upload your pCon file** to the app.  
-3. **Click one of the three buttons** to generate the file you need.  
-4. **Once generated, a new button will appear** for you to download the file.  
-
-### **What can the app generate?**
-#### 1. Product list for presentations
-A Word file with product quantities and descriptions for easy copy-pasting into PowerPoint.
-
-**Example output:**
-- 1 X 70/70 Table / 170 X 85 CM / 67 X 33.5" - Solid Oak/Anthracite Black  
-- 1 X Fiber Armchair / Swivel Base - Refine Leather Cognac/Anthracite Black  
-
-#### 2. Product list for order import
-A file formatted for direct import into the partner platform. This allows you to:
-- Visualize the products  
-- Place a quote/order  
-- Pass the list to Customer Care to avoid manual entry  
-
-#### 3. Product SKU mapping  
-An Excel file with two sheets:
-- **Product SKU mapping** – A list of products in the uploaded pCon setting with corresponding item numbers for EUR, UK, APMEA, and pattern numbers for the US.  
-- **Master data export** – A full data export of the uploaded products for project documentation.  
-
-[Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
-""")
-
 uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'xls', 'csv'])
+if uploaded_file:
+    master_data = load_data("Muuto_Master_Data_CON_January_2025_EUR.xlsx")
+    library_data = load_data("Library_data.xlsx")
+    
+    user_data = load_uploaded_file(uploaded_file)
+    if isinstance(user_data, pd.ExcelFile) and 'Article List' in user_data.sheet_names:
+        uploaded_df = pd.read_excel(user_data, sheet_name='Article List')
+    else:
+        uploaded_df = user_data
+    
+    if uploaded_df is not None:
+        user_df = preprocess_user_data(uploaded_df)
+        matched_df = match_article_numbers(user_df, master_data, library_data)
+        
+        if st.button("Generate product list for presentations"):
+            buffer = generate_word_file(matched_df)
+            st.download_button("Download file", buffer, file_name="product-list_presentation.docx")
+        
+        if st.button("Generate order import file"):
+            buffer = generate_excel_file(matched_df[['Quantity', 'Article No.']], include_headers=False)
+            st.download_button("Download file", buffer, file_name="order-import.xlsx")
+        
+        if st.button("Generate masterdata and SKU mapping"):
+            buffer = generate_excel_file(matched_df[['Quantity', 'Article No.', 'Masterdata Output']])
+            st.download_button("Download file", buffer, file_name="masterdata-SKUmapping.xlsx")
