@@ -93,6 +93,9 @@ def match_article_numbers(user_df, master_df, library_df):
     merged_df['Masterdata Output'] = merged_df['Base Article No.'].fillna('') + " - " + merged_df['Variant'].fillna('')
     merged_df['Word Output'] = merged_df['Quantity'].astype(str) + " X " + merged_df['Short text'].fillna('')
     
+    # Include Variant in Word Output if not empty
+    merged_df.loc[merged_df['Variant'] != '', 'Word Output'] += " - " + merged_df['Variant']
+    
     return merged_df[['Quantity', 'Article No.', 'PRODUCT', 'Masterdata Output', 'Word Output']]
 
 def generate_word_file(merged_df):
@@ -105,10 +108,10 @@ def generate_word_file(merged_df):
     buffer.seek(0)
     return buffer
 
-def generate_excel_file(merged_df):
+def generate_excel_file(merged_df, include_headers=True):
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        merged_df.to_excel(writer, index=False, header=True)
+        merged_df.to_excel(writer, index=False, header=include_headers)
     buffer.seek(0)
     return buffer
 
@@ -166,7 +169,7 @@ if uploaded_file and master_data is not None:
             st.download_button("Download file", buffer, file_name="product-list_presentation.docx")
         
         if st.button("Generate order import file"):
-            buffer = generate_excel_file(matched_df[['Quantity', 'Article No.']])
+            buffer = generate_excel_file(matched_df[['Quantity', 'Article No.']], include_headers=False)
             st.download_button("Download file", buffer, file_name="order-import.xlsx")
         
         if st.button("Generate masterdata and SKU mapping"):
