@@ -81,6 +81,31 @@ library_data = load_data("Library_data.xlsx")
 
 st.title('Muuto Product List Generator')
 
+st.write("""
+This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
+
+### **How it works:**  
+1. **Export your product list from pCon** (formatted like the example file).  
+2. **Upload your pCon file** to the app.  
+3. **Click one of the three buttons** to generate the file you need.  
+4. **Once generated, a new button will appear** for you to download the file.  
+
+### **What can the app generate?**
+#### 1. Product list for presentations  
+A Word file with product quantities and descriptions for easy copy-pasting into PowerPoint.
+
+#### 2. Product list for order import  
+A file formatted for direct import into the partner platform. This allows you to:  
+- Visualize the products  
+- Place a quote/order  
+- Pass the list to Customer Care to avoid manual entry  
+
+#### 3. Product SKU mapping  
+An Excel file with two sheets:
+- **Product SKU mapping** – A list of products in the uploaded pCon setting with corresponding item numbers for EUR, UK, APMEA, and pattern numbers for the US.  
+- **Master data export** – A full data export of the uploaded products for project documentation.  
+""")
+
 uploaded_file = st.file_uploader("Upload your product list (Excel)", type=['xlsx'])
 if uploaded_file and master_data is not None:
     user_data = pd.ExcelFile(uploaded_file, engine='openpyxl')
