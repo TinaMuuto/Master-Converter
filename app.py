@@ -7,7 +7,9 @@ from docx import Document
 
 def load_data(file_path):
     if os.path.exists(file_path):
-        return pd.read_excel(file_path, engine='openpyxl')
+        df = pd.read_excel(file_path, engine='openpyxl')
+        df.columns = [col.strip() for col in df.columns]  # Strip whitespace from column names
+        return df
     else:
         st.error(f"File {file_path} is missing. Please upload a valid file.")
         return None
@@ -20,7 +22,9 @@ def load_uploaded_file(uploaded_file):
             except pd.errors.ParserError:
                 return pd.read_csv(uploaded_file, sep=',', engine='python')
         else:
-            return pd.ExcelFile(uploaded_file, engine='openpyxl')
+            df = pd.ExcelFile(uploaded_file, engine='openpyxl')
+            df.sheet_names = [sheet.strip() for sheet in df.sheet_names]  # Strip sheet names
+            return df
     except Exception as e:
         st.error(f"Error loading file: {e}")
         return None
@@ -35,6 +39,14 @@ def preprocess_user_data(df):
     return df[['Article No.', 'Quantity', 'Variant', 'Short text', 'Base Article No.']]
 
 def match_article_numbers(user_df, master_df, library_df):
+    if not all(col in master_df.columns for col in ['ITEM NO.', 'Product']):
+        st.error("Master Data file is missing required columns: 'ITEM NO.', 'Product'")
+        return pd.DataFrame()
+    
+    if not all(col in library_df.columns for col in ['EUR item no.', 'Product']):
+        st.error("Library Data file is missing required columns: 'EUR item no.', 'Product'")
+        return pd.DataFrame()
+    
     master_df['ITEM NO.'] = master_df['ITEM NO.'].astype(str)
     library_df['EUR item no.'] = library_df['EUR item no.'].astype(str)
     
