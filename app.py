@@ -17,10 +17,7 @@ def load_data(file_path):
 def load_uploaded_file(uploaded_file):
     try:
         if uploaded_file.name.endswith('.csv'):
-            try:
-                return pd.read_csv(uploaded_file, sep=';', engine='python')
-            except pd.errors.ParserError:
-                return pd.read_csv(uploaded_file, sep=',', engine='python')
+            return pd.read_csv(uploaded_file, sep=';', engine='python')
         else:
             return pd.ExcelFile(uploaded_file, engine='openpyxl')
     except Exception as e:
@@ -28,12 +25,12 @@ def load_uploaded_file(uploaded_file):
         return None
 
 def preprocess_user_data(df):
-    df = df.iloc[1:].reset_index(drop=True)  # Start from row 2 (zero-indexed)
-    df['Article No.'] = df.iloc[:, 17].astype(str).str.upper()  # Column R
-    df['Quantity'] = df.iloc[:, 30]  # Column AE
-    df['Variant'] = df.iloc[:, 4].fillna('').str.upper()  # Column E
-    df['Short text'] = df.iloc[:, 2].fillna('').str.upper()  # Column C
-    df['Base Article No.'] = df['Article No.'].str.split('-').str[0].str.upper()  # Base article number for fallback
+    df = df.iloc[1:].reset_index(drop=True)
+    df['Article No.'] = df.iloc[:, 17].astype(str).str.upper()
+    df['Quantity'] = df.iloc[:, 30]
+    df['Variant'] = df.iloc[:, 4].fillna('').str.upper()
+    df['Short text'] = df.iloc[:, 2].fillna('').str.upper()
+    df['Base Article No.'] = df['Article No.'].str.split('-').str[0].str.upper()
     return df[['Article No.', 'Quantity', 'Variant', 'Short text', 'Base Article No.']]
 
 def generate_word_file(merged_df):
@@ -70,48 +67,24 @@ def match_article_numbers(user_df, master_df, library_df):
     master_df['ITEM NO.'] = master_df['ITEM NO.'].astype(str).str.upper()
     library_df['EUR ITEM NO.'] = library_df['EUR ITEM NO.'].astype(str).str.upper()
     
-    merged_df = user_df.merge(
-        master_df[['ITEM NO.', 'PRODUCT']], 
-        left_on='Article No.', 
-        right_on='ITEM NO.', 
-        how='left'
-    )
+    merged_df = user_df.merge(master_df[['ITEM NO.', 'PRODUCT']], left_on='Article No.', right_on='ITEM NO.', how='left')
     
     unmatched = merged_df['PRODUCT'].isna()
-    library_match = user_df.loc[unmatched].merge(
-        library_df[['EUR ITEM NO.', 'PRODUCT']],
-        left_on='Article No.', 
-        right_on='EUR ITEM NO.', 
-        how='left'
-    )
+    library_match = user_df.loc[unmatched].merge(library_df[['EUR ITEM NO.', 'PRODUCT']], left_on='Article No.', right_on='EUR ITEM NO.', how='left')
     merged_df.loc[unmatched, 'PRODUCT'] = library_match['PRODUCT']
     
     unmatched = merged_df['PRODUCT'].isna()
-    fallback_df = user_df.loc[unmatched].merge(
-        master_df[['ITEM NO.', 'PRODUCT']], 
-        left_on='Base Article No.', 
-        right_on='ITEM NO.', 
-        how='left'
-    )
+    fallback_df = user_df.loc[unmatched].merge(master_df[['ITEM NO.', 'PRODUCT']], left_on='Base Article No.', right_on='ITEM NO.', how='left')
     merged_df.loc[unmatched, 'PRODUCT'] = fallback_df['PRODUCT']
     
-    library_fallback = user_df.loc[unmatched].merge(
-        library_df[['EUR ITEM NO.', 'PRODUCT']],
-        left_on='Base Article No.', 
-        right_on='EUR ITEM NO.', 
-        how='left'
-    )
+    library_fallback = user_df.loc[unmatched].merge(library_df[['EUR ITEM NO.', 'PRODUCT']], left_on='Base Article No.', right_on='EUR ITEM NO.', how='left')
     merged_df.loc[unmatched, 'PRODUCT'] = library_fallback['PRODUCT']
     
-    merged_df['FINAL VARIANT'] = merged_df.apply(
-        lambda row: row['Variant'] if pd.notna(row['PRODUCT']) and row['Variant'] not in ['', 'Light Option: Off'] else row['Short text'], axis=1
-    )
+    merged_df['FINAL VARIANT'] = merged_df.apply(lambda row: row['Variant'] if row['Variant'] not in ['', 'LIGHT OPTION: OFF'] else row['Short text'], axis=1)
     
     merged_df['Masterdata Output'] = (merged_df['Base Article No.'].fillna('') + " - " + merged_df['FINAL VARIANT'].fillna('')).str.upper()
     merged_df['Word Output'] = merged_df.apply(
-        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'Light Option: Off'] else ''}"
-        if pd.notna(row['PRODUCT']) else
-        f"{row['Quantity']} X {row['Short text']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'Light Option: Off'] else ''}", axis=1
+        lambda row: f"{row['Quantity']} X {row['PRODUCT']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'Light Option: Off'] else ''}" if pd.notna(row['PRODUCT']) else f"{row['Quantity']} X {row['Short text']} {' - ' + row['FINAL VARIANT'] if row['FINAL VARIANT'] not in ['', 'Light Option: Off'] else ''}", axis=1
     ).str.upper()
     
     return merged_df[['Quantity', 'Article No.', 'PRODUCT', 'Masterdata Output', 'Word Output']]
@@ -129,9 +102,11 @@ This tool is designed to **help you structure, validate, and enrich pCon product
 """)
 
 uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'xls', 'csv'])
+
 if uploaded_file:
     master_data = load_data("Muuto_Master_Data_CON_January_2025_EUR.xlsx")
     library_data = load_data("Library_data.xlsx")
+    
     user_data = load_uploaded_file(uploaded_file)
     if isinstance(user_data, pd.ExcelFile) and 'Article List' in user_data.sheet_names:
         uploaded_df = pd.read_excel(user_data, sheet_name='Article List')
