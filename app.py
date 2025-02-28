@@ -27,7 +27,6 @@ def load_library_data(library_path="Library_data.xlsx"):
     try:
         df = pd.read_excel(library_path, engine="openpyxl")
         df.columns = df.columns.str.strip().str.upper()
-        # Sørg for at kolonner bruges i uppercase
         if "EUR ITEM NO." in df.columns:
             df["EUR ITEM NO."] = df["EUR ITEM NO."].astype(str).str.strip().str.upper()
         return df
@@ -103,7 +102,6 @@ def preprocess_user_data(df):
       - 4  -> Variant Text
     Antager, at skiprows=2 allerede har fjernet de to første rækker.
     """
-    # Tjek at df har nok kolonner
     if df.shape[1] < 31:
         st.error("Den uploadede fil indeholder ikke nok kolonner (mindst 31 kræves). Tjek format.")
         return None
@@ -123,18 +121,18 @@ def preprocess_user_data(df):
 
 
 #####################
-# 3. PRÆSENTATIONSLISTE (WORD)
+# 3. PRÆSENTATIONSLISTE (WORD) - UDEN DELVIS MATCH + ALFABETISK SORTERING
 #####################
 
 def generate_presentation_word(df_user, df_library):
     """
     1) For hver række i df_user:
        - Forsøg direct match: 'ARTICLE_NO' i df_library['EUR ITEM NO.']
-       - Hvis MATCH: "QUANTITY X PRODUCT" (fuldstændigt match)
-       - Hvis intet match: "QUANTITY X SHORT_TEXT - VARIANT_TEXT"
-         (udelad '- VARIANT_TEXT' hvis variant_text er tom eller "LIGHT OPTION: OFF")
-    2) Returnér Word-fil som BytesIO
-    3) Nu UDEN delvist match (ingen split på "-").
+       - Hvis fuldt match: "QUANTITY X PRODUCT"
+       - Hvis intet match: "QUANTITY X SHORT_TEXT - VARIANT_TEXT" 
+         (udelad "- VARIANT_TEXT" hvis variant_text er tom / "LIGHT OPTION: OFF")
+    2) Sortér alfabetisk på produkt-match eller short text.
+    3) Returnér Word-fil som BytesIO
     """
     required_cols = ["PRODUCT", "EUR ITEM NO."]
     for col in required_cols:
@@ -145,35 +143,42 @@ def generate_presentation_word(df_user, df_library):
     # Opslagsdict: {EUR ITEM NO.: PRODUCT}
     lookup_library = df_library.set_index("EUR ITEM NO.")["PRODUCT"].to_dict()
 
-    word_lines = []
+    # Midlertidig liste med (sort_key, text_line)
+    lines_info = []
+
     for _, row in df_user.iterrows():
         article_no = row["ARTICLE_NO"]
         quantity = row["QUANTITY"]
         short_text = row["SHORT_TEXT"]
         variant_text = row["VARIANT_TEXT"]
 
-        # Kun fuldt match
+        # Fuld match: ingen splitted fallback
         product_match = lookup_library.get(article_no)
 
         if product_match:
-            text_line = f"{quantity} X {product_match}"
+            # Sortér efter "product_match"
+            sort_key = product_match
+            final_line = f"{quantity} X {product_match}"
         else:
-            # fallback til short_text/variant
+            # fallback => short_text (+ evt. variant)
+            sort_key = short_text
             if variant_text and variant_text != "LIGHT OPTION: OFF":
-                text_line = f"{quantity} X {short_text} - {variant_text}"
+                final_line = f"{quantity} X {short_text} - {variant_text}"
             else:
-                text_line = f"{quantity} X {short_text}"
+                final_line = f"{quantity} X {short_text}"
 
-        # Alt i uppercase
-        text_line = text_line.upper()
-        word_lines.append(text_line)
+        # Alt i uppercase i det endelige output
+        lines_info.append((sort_key.upper(), final_line.upper()))
 
-    # Opret Word-dokument i hukommelsen
+    # Sortér efter sort_key (0. element i tuple)
+    lines_info.sort(key=lambda x: x[0])
+
+    # Byg Word-fil
     buffer = BytesIO()
     doc = Document()
     doc.add_heading('Product List for Presentations', level=1)
-    for line in word_lines:
-        doc.add_paragraph(line)
+    for _, line_text in lines_info:
+        doc.add_paragraph(line_text)
     doc.save(buffer)
     buffer.seek(0)
     return buffer
@@ -217,14 +222,12 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
          APMEA item no.
          USD pattern no.
          Match status
-
-       (Her bruger vi fortsat fallback
-        for delvist match via split på "-")
+       (HER er delvist match stadig aktivt, via splitted "ARTICLE_NO".)
 
     2) "Master data export":
        - Alle kolonner fra df_master (ITEM NO., DESCRIPTION, osv.)
        - Dertil: 'Article No.', 'Short Text', 'Variant text' fra brugerfilen
-         (med direct + fallback match)
+         med direct + splitted fallback match.
     """
 
     # =============== ITEM NUMBER MAPPING ===============
@@ -389,7 +392,7 @@ def main():
             if df_user is None:
                 return  # Stop, hvis preprocess fejlede
 
-            # Knap 1: Word-fil (uden partial match)
+            # 1) Word-fil UDEN delvist match, MED alfabetisk sortering
             if st.button("Generate List for presentations"):
                 word_buffer = generate_presentation_word(df_user, df_library)
                 if word_buffer:
@@ -399,7 +402,7 @@ def main():
                         file_name="product-list.docx"
                     )
 
-            # Knap 2: Order import (2 kolonner)
+            # 2) Order import (2 kolonner)
             if st.button("Generate product list for order import in partner platform"):
                 order_buffer = generate_order_import_excel(df_user)
                 st.download_button(
@@ -408,7 +411,7 @@ def main():
                     file_name="order-import.xlsx"
                 )
 
-            # Knap 3: SKU mapping & masterdata
+            # 3) SKU mapping & masterdata
             if st.button("Generate SKU mapping & masterdata"):
                 sku_buffer = generate_sku_masterdata_excel(df_user, df_library, df_master)
                 if sku_buffer:
@@ -417,6 +420,7 @@ def main():
                         data=sku_buffer, 
                         file_name="SKUmapping-masterdata.xlsx"
                     )
+
 
 if __name__ == "__main__":
     main()
