@@ -11,8 +11,8 @@ from docx import Document
 
 def load_library_data(library_path="Library_data.xlsx"):
     """
-    Indlæser Library_data.xlsx, renser kolonnenavne og returnerer en DataFrame.
-    Forventer (i række 1, evt. i blandet case):
+    Loads Library_data.xlsx, trims and converts column names to uppercase.
+    Expected headers (in row 1) include:
         - Product
         - EUR item no.
         - GBP item no.
@@ -21,32 +21,27 @@ def load_library_data(library_path="Library_data.xlsx"):
         - Match Status
     """
     if not os.path.exists(library_path):
-        st.error(f"Filen {library_path} mangler i mappen. Upload eller placér filen korrekt.")
+        st.error(f"File {library_path} not found. Please upload or place the file correctly.")
         return None
-    
     try:
         df = pd.read_excel(library_path, engine="openpyxl")
-        # Konverter kolonnenavne til uppercase + strip
         df.columns = df.columns.str.strip().str.upper()
-        # Konverter evt. 'EUR ITEM NO.' til uppercase i selve data
         if "EUR ITEM NO." in df.columns:
             df["EUR ITEM NO."] = df["EUR ITEM NO."].astype(str).str.strip().str.upper()
         return df
     except Exception as e:
-        st.error(f"Fejl ved indlæsning af {library_path}: {e}")
+        st.error(f"Error loading {library_path}: {e}")
         return None
-
 
 def load_master_data(master_path="Muuto_Master_Data_CON_January_2025_EUR.xlsx"):
     """
-    Indlæser hele masterdata-filen.
-    Forventer kolonne B: ITEM NO. (unikt).
-    Returnerer en DataFrame med alle kolonner.
+    Loads the entire master data file.
+    Expected unique lookup column: ITEM NO. (in column B).
+    Returns a DataFrame with all columns.
     """
     if not os.path.exists(master_path):
-        st.error(f"Filen {master_path} mangler i mappen. Upload eller placér filen korrekt.")
+        st.error(f"File {master_path} not found. Please upload or place the file correctly.")
         return None
-    
     try:
         df = pd.read_excel(master_path, engine="openpyxl")
         df.columns = df.columns.str.strip().str.upper()
@@ -54,97 +49,91 @@ def load_master_data(master_path="Muuto_Master_Data_CON_January_2025_EUR.xlsx"):
             df["ITEM NO."] = df["ITEM NO."].astype(str).str.strip().str.upper()
         return df
     except Exception as e:
-        st.error(f"Fejl ved indlæsning af {master_path}: {e}")
+        st.error(f"Error loading {master_path}: {e}")
         return None
-
 
 def load_user_file(uploaded_file):
     """
-    Læser brugerens uploadede fil (pCon-export).
-    - Hvis Excel: led efter en fane "Article List", skip de to første rækker, ingen header
-    - Hvis CSV: forsøg først med sep=';', hvis fejl, forsøg med sep=','
-      i begge tilfælde skiprows=2, header=None
-    Returnerer en DataFrame (uden navngivne kolonner) eller None.
+    Loads the user's uploaded file (pCon-export).
+    - If Excel: looks for sheet "Article List", skips the first 2 rows, no header.
+    - If CSV: first tries sep=';', if that fails, uses sep=','.
+      In both cases, skiprows=2, header=None.
+    Returns a DataFrame (without column names) or None.
     """
     try:
         file_name = uploaded_file.name.lower()
         if file_name.endswith(".csv"):
-            # 1) Prøv først sep=';'
             try:
                 df = pd.read_csv(uploaded_file, sep=';', engine="python", header=None, skiprows=2)
             except:
-                # 2) Fallback: sep=','
-                uploaded_file.seek(0)  # nulstil filpegeren
+                uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file, sep=',', engine="python", header=None, skiprows=2)
             return df
-        
         else:
-            # Excel
             excel_obj = pd.ExcelFile(uploaded_file, engine="openpyxl")
             if "Article List" in excel_obj.sheet_names:
                 df = pd.read_excel(excel_obj, sheet_name="Article List", skiprows=2, header=None)
                 return df
             else:
-                st.error("Filen indeholder ikke en fane ved navn 'Article List'.")
+                st.error("The file does not contain a sheet named 'Article List'.")
                 return None
-    
     except Exception as e:
-        st.error(f"Fejl ved læsning af fil: {e}")
+        st.error(f"Error reading file: {e}")
         return None
 
 #####################
-# 2. Preprocessing af brugerens data
+# 2. Preprocessing of user data
 #####################
 
 def preprocess_user_data(df):
     """
-    Henter kolonnerne (index-baseret):
-      - 17 -> Article No.
-      - 30 -> Quantity
-      - 2  -> Short Text
-      - 4  -> Variant Text
-    Antager, at skiprows=2 allerede har fjernet de to første rækker.
+    Extracts columns (by index):
+      - Index 17 -> ARTICLE_NO
+      - Index 30 -> QUANTITY
+      - Index 2  -> SHORT_TEXT
+      - Index 4  -> VARIANT_TEXT
+    Assumes the first 2 rows have been skipped.
+    Variant text is filled with empty string where missing.
     """
     if df.shape[1] < 31:
-        st.error("Den uploadede fil indeholder ikke nok kolonner (mindst 31 kræves). Tjek format.")
+        st.error("The uploaded file does not have enough columns (at least 31 required). Check format.")
         return None
 
     article_no = df.iloc[:, 17].astype(str).str.strip().str.upper()
     quantity = df.iloc[:, 30]
     short_text = df.iloc[:, 2].astype(str).str.strip().str.upper()
-    variant_text = df.iloc[:, 4].astype(str).str.strip().str.upper()
-
+    # Fill NaN in Variant Text with empty string
+    variant_text = df.iloc[:, 4].fillna("").astype(str).str.strip().str.upper()
+    
     out_df = pd.DataFrame({
         "ARTICLE_NO": article_no,
         "QUANTITY": quantity,
         "SHORT_TEXT": short_text,
         "VARIANT_TEXT": variant_text
     })
+    # Remove rows with empty ARTICLE_NO
+    out_df = out_df[out_df["ARTICLE_NO"].astype(bool)]
     return out_df
 
-
 #####################
-# 3. PRÆSENTATIONSLISTE (WORD) - kun fuldt match, ingen fallback
+# 3. Product list for presentations (Word) - full match only, no fallback
 #####################
 
 def generate_presentation_word(df_user, df_library):
     """
-    1) For hver række i df_user:
-       - Forsøg direct match: 'ARTICLE_NO' i df_library['EUR ITEM NO.']
-       - Hvis match: "QUANTITY X PRODUCT"
-       - Hvis intet match: "QUANTITY X SHORT_TEXT - VARIANT_TEXT" 
-         (udelad '- VARIANT_TEXT' hvis variant_text er tom eller "LIGHT OPTION: OFF")
-    2) Sortér efter (PRODUCT el. SHORT_TEXT) i stigende alfabetisk rækkefølge
-    3) Returnér Word-fil som BytesIO
+    For each row in df_user:
+      - Attempt a direct match: 'ARTICLE_NO' vs. df_library['EUR ITEM NO.'].
+      - If a match is found, return "QUANTITY X PRODUCT".
+      - If no match, return "QUANTITY X SHORT_TEXT - VARIANT_TEXT"
+        (omitting '- VARIANT_TEXT' if empty or equals "LIGHT OPTION: OFF").
+    The list is sorted alphabetically (case-insensitive) before generating a Word document.
     """
-
     required_cols = ["PRODUCT", "EUR ITEM NO."]
     for col in required_cols:
         if col not in df_library.columns:
-            st.error(f"Library_data mangler kolonnen '{col}'. Kan ikke generere præsentationsliste.")
+            st.error(f"Library_data is missing the column '{col}'. Cannot generate presentation list.")
             return None
 
-    # Opslagsdict: {EUR ITEM NO.: PRODUCT}
     lookup_library = df_library.set_index("EUR ITEM NO.")["PRODUCT"].to_dict()
 
     lines_info = []
@@ -155,7 +144,6 @@ def generate_presentation_word(df_user, df_library):
         variant_text = row["VARIANT_TEXT"]
 
         product_match = lookup_library.get(article_no)
-
         if product_match:
             sort_key = product_match
             final_line = f"{quantity} X {product_match}"
@@ -165,13 +153,9 @@ def generate_presentation_word(df_user, df_library):
                 final_line = f"{quantity} X {short_text} - {variant_text}"
             else:
                 final_line = f"{quantity} X {short_text}"
-
         lines_info.append((sort_key.upper(), final_line.upper()))
 
-    # Alfabetisk sortering på sort_key
     lines_info.sort(key=lambda x: x[0])
-
-    # Opret Word-dokument i hukommelsen
     buffer = BytesIO()
     doc = Document()
     doc.add_heading('Product List for Presentations', level=1)
@@ -181,55 +165,56 @@ def generate_presentation_word(df_user, df_library):
     buffer.seek(0)
     return buffer
 
-
 #####################
-# 4. ORDER IMPORT FIL (2 kolonner, ingen header)
+# 4. Order import file (Excel with 2 columns, no header)
 #####################
 
 def generate_order_import_excel(df_user):
     """
-    Returnerer en BytesIO med 2 kolonner, uden headers:
-      - A: QUANTITY
-      - B: ARTICLE_NO
+    Returns an Excel file (as BytesIO) with 2 columns (no headers):
+      - Column A: QUANTITY
+      - Column B: ARTICLE_NO
     """
     buffer = BytesIO()
     temp_df = df_user[["QUANTITY", "ARTICLE_NO"]].copy()
-
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         temp_df.to_excel(writer, index=False, header=False)
     buffer.seek(0)
     return buffer
 
-
 #####################
-# 5. SKU MAPPING & MASTERDATA (med fallback)
+# 5. SKU mapping & Masterdata (with fallback)
 #####################
 
 def generate_sku_masterdata_excel(df_user, df_library, df_master):
     """
-    Genererer 2 ark:
+    Generates an Excel file with two sheets:
+    
     1) "Item number mapping":
-       - Forsøger direct + fallback match (split på '-')
-       - Kolonner:
-         Quantity in setting
-         Article No.
-         Short Text
-         Variant text
-         Product in setting
-         EUR item no.
-         GBP item no.
-         APMEA item no.
-         USD pattern no.
-         Match status
-
+       - Uses a direct match between df_user's ARTICLE_NO and Library_data's EUR ITEM NO.
+       - If no direct match is found (e.g. ARTICLE_NO = "98290-721"), strips off everything after "-"
+         (resulting in "98290") and attempts a fallback match.
+       - Returns the following columns:
+           • Quantity in setting (from df_user's Quantity)
+           • Article No.
+           • Short Text
+           • Variant text (with empty cells replaced by an empty string)
+           • Product in setting (from Library_data's Product)
+           • EUR item no.
+           • GBP item no.
+           • APMEA item no.
+           • USD pattern no.
+           • Match status
+           
     2) "Master data export":
-       - Direct + fallback match
-       - Returnerer alle master-kolonner + 'Article No.', 'Short Text', 'Variant text'
+       - Uses a direct match between df_user's ARTICLE_NO and masterdata's ITEM NO.
+       - If no direct match is found, applies fallback matching by stripping ARTICLE_NO for "-" and matching the base value.
+       - Returns all columns from the masterdata file plus the df_user columns:
+         Article No., Short Text, and Variant text (with Variant text cleaned of NaN values).
+    
+    In both sheets, any NaN values in Variant text are replaced with an empty string.
     """
-
-    # =============== ITEM NUMBER MAPPING ===============
-
-    # Omdøb library-kolonner (ingen warnings, bare ignore)
+    # --- ITEM NUMBER MAPPING ---
     rename_map = {
         "PRODUCT": "LIB_PRODUCT",
         "EUR ITEM NO.": "LIB_EUR_ITEM_NO",
@@ -238,10 +223,9 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         "USD PATTERN NO.": "LIB_USD_PATTERN_NO",
         "MATCH STATUS": "LIB_MATCH_STATUS"
     }
-    # errors="ignore" => Hvis en nøgle i rename_map ikke findes, springes den bare over
     df_library_renamed = df_library.rename(columns=rename_map, errors="ignore")
 
-    # Direct merge
+    # Direct merge on ARTICLE_NO vs LIB_EUR_ITEM_NO
     if "LIB_EUR_ITEM_NO" in df_library_renamed.columns:
         merged_direct = pd.merge(
             df_user,
@@ -251,14 +235,15 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             right_on="LIB_EUR_ITEM_NO"
         )
     else:
-        # Ingen EUR ITEM NO. => alt er fallback
         merged_direct = df_user.copy()
 
-    # Tjek om vi har LIB_PRODUCT => hvis ikke, er alt unmatched
+    # Ensure Variant text is cleaned (replace NaN with "")
+    merged_direct["VARIANT_TEXT"] = merged_direct["VARIANT_TEXT"].fillna("")
+
     if "LIB_PRODUCT" in merged_direct.columns:
         mask_no_direct = merged_direct["LIB_PRODUCT"].isna()
     else:
-        mask_no_direct = pd.Series([True]*len(merged_direct), index=merged_direct.index)
+        mask_no_direct = pd.Series([True] * len(merged_direct), index=merged_direct.index)
 
     fallback_rows = merged_direct.loc[mask_no_direct].copy()
     fallback_rows["SHORT_ARTICLE"] = fallback_rows["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
@@ -272,9 +257,8 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             right_on="LIB_EUR_ITEM_NO"
         )
     else:
-        fallback_merged = fallback_rows.copy()  # Ingen kolonner fra library at merge
+        fallback_merged = fallback_rows.copy()
 
-    # Kopier de kolonner, vi gerne vil overføre
     columns_to_update = [
         "LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO",
         "LIB_APMEA_ITEM_NO", "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"
@@ -282,28 +266,26 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     for col in columns_to_update:
         if col in fallback_merged.columns:
             merged_direct.loc[mask_no_direct, col] = fallback_merged[col].values
-        # Ingen warning - bare skip
 
-    # Byg "Item number mapping"
-    item_number_mapping_df = pd.DataFrame()
-    item_number_mapping_df["Quantity in setting"] = merged_direct["QUANTITY"]
-    item_number_mapping_df["Article No."] = merged_direct["ARTICLE_NO"]
-    item_number_mapping_df["Short Text"] = merged_direct["SHORT_TEXT"]
-    item_number_mapping_df["Variant text"] = merged_direct["VARIANT_TEXT"]
-    item_number_mapping_df["Product in setting"] = merged_direct.get("LIB_PRODUCT", None)
-    item_number_mapping_df["EUR item no."] = merged_direct.get("LIB_EUR_ITEM_NO", None)
-    item_number_mapping_df["GBP item no."] = merged_direct.get("LIB_GBP_ITEM_NO", None)
-    item_number_mapping_df["APMEA item no."] = merged_direct.get("LIB_APMEA_ITEM_NO", None)
-    item_number_mapping_df["USD pattern no."] = merged_direct.get("LIB_USD_PATTERN_NO", None)
-    item_number_mapping_df["Match status"] = merged_direct.get("LIB_MATCH_STATUS", None)
+    item_number_mapping_df = pd.DataFrame({
+        "Quantity in setting": merged_direct["QUANTITY"],
+        "Article No.": merged_direct["ARTICLE_NO"],
+        "Short Text": merged_direct["SHORT_TEXT"],
+        "Variant text": merged_direct["VARIANT_TEXT"],
+        "Product in setting": merged_direct.get("LIB_PRODUCT", None),
+        "EUR item no.": merged_direct.get("LIB_EUR_ITEM_NO", None),
+        "GBP item no.": merged_direct.get("LIB_GBP_ITEM_NO", None),
+        "APMEA item no.": merged_direct.get("LIB_APMEA_ITEM_NO", None),
+        "USD pattern no.": merged_direct.get("LIB_USD_PATTERN_NO", None),
+        "Match status": merged_direct.get("LIB_MATCH_STATUS", None)
+    })
+    item_number_mapping_df["Variant text"] = item_number_mapping_df["Variant text"].fillna("")
+    item_number_mapping_df = item_number_mapping_df[item_number_mapping_df["Article No."].astype(bool)]
 
-    # =============== MASTER DATA EXPORT ===============
-    # Direct + fallback merges
+    # --- MASTER DATA EXPORT ---
     if "ITEM NO." not in df_master.columns:
-        # Ingen matches mulige
         master_data_export_df = pd.DataFrame(columns=["Article No.", "Short Text", "Variant text"] + df_master.columns.tolist())
     else:
-        # Direct
         master_direct = pd.merge(
             df_user,
             df_master,
@@ -323,7 +305,6 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             right_on="ITEM NO."
         )
 
-        # Kopier kun kolonner, der findes
         for col in df_master.columns:
             if col in fallback_master_merged.columns:
                 master_direct.loc[mask_no_direct_master, col] = fallback_master_merged[col].values
@@ -334,18 +315,17 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             "SHORT_TEXT": "Short Text",
             "VARIANT_TEXT": "Variant text"
         }, inplace=True)
-
-        # Flyt "Article No.", "Short Text", "Variant text" forrest
+        master_direct["Variant text"] = master_direct["Variant text"].fillna("")
         front_cols = ["Article No.", "Short Text", "Variant text"]
         other_cols = [c for c in master_direct.columns if c not in front_cols]
         master_data_export_df = master_direct[front_cols + other_cols]
+        master_data_export_df = master_data_export_df[master_data_export_df["Article No."].astype(bool)]
 
-    # Skriv 2 ark til én Excel
+    # Write both sheets to one Excel file
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         item_number_mapping_df.to_excel(writer, sheet_name="Item number mapping", index=False)
         master_data_export_df.to_excel(writer, sheet_name="Master data export", index=False)
-
     buffer.seek(0)
     return buffer
 
@@ -355,87 +335,55 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
 
 def main():
     st.set_page_config(page_title="Muuto Product List Generator", layout="centered")
-
-    # Instruktioner
     st.title('Muuto Product List Generator')
-
     st.write("""
     This tool is designed to **help you structure, validate, and enrich pCon product data effortlessly**.
-
-    ### **How it works:**  
-    1. **Export your product list from pCon** (formatted like the example file).  
-    2. **Upload your pCon file** to the app.  
-    3. **Click one of the three buttons** to generate the file you need.  
-    4. **Once generated, a new button will appear** for you to download the file.  
-
-    ### **What can the app generate?**
-    #### 1. Product list for presentations
-    A Word file with product quantities and descriptions for easy copy-pasting into PowerPoint.
-
-    **Example output:**
-    - 1 X 70/70 Table / 170 X 85 CM / 67 X 33.5" - Solid Oak/Anthracite Black  
-    - 1 X Fiber Armchair / Swivel Base - Refine Leather Cognac/Anthracite Black  
-
-    #### 2. Product list for order import
-    A file formatted for direct import into the partner platform. This allows you to:
-    - Visualize the products  
-    - Place a quote/order  
-    - Pass the list to Customer Care to avoid manual entry  
-
-    #### 3. Product SKU mapping  
-    An Excel file with two sheets:
-    - **Product SKU mapping** – A list of products in the uploaded pCon setting with corresponding item numbers for EUR, UK, APMEA, and pattern numbers for the US.  
-    - **Master data export** – A full data export of the uploaded products for project documentation.  
+    
+    ### How it works:
+    1. Export your product list from pCon (formatted like the example file).
+    2. Upload your pCon file to the app.
+    3. Click one of the three buttons to generate the file you need.
+    4. Once generated, a new button will appear for you to download the file.
+    
+    ### Expected Outputs:
+    - **Product list for presentations:** A Word file with product quantities and descriptions (Quantity X Product if a direct match is found in Library_data; otherwise, Quantity X Short Text - Variant Text).
+      - File name: product-list_presentation.docx
+    - **Order import file:** An Excel file with two columns (Quantity and Article No.) for direct import into the partner platform.
+      - File name: order-import.xlsx
+    - **Product SKU mapping:** An Excel file with two sheets:
+      1. **Product SKU mapping:** Combines uploaded data (Article No. from the "Article List" sheet) with Library_data (matched on EUR item no.). If a direct match is not found, the article number is stripped (e.g., "98290-721" becomes "98290") and then matched.
+      2. **Master data export:** Uses uploaded data (Article No.) to find matching records in the master data file (matched on ITEM NO.). If no direct match is found, the article number is stripped similarly and then matched. All master data columns are returned, along with the uploaded file’s Article No., Short Text, and Variant Text.
+      - File name: SKUmapping-masterdata.xlsx
 
     [Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
     """)
 
-    # Indlæs referencefiler
     df_library = load_library_data()
     df_master = load_master_data()
     if (df_library is None) or (df_master is None):
-        return  # Stop, hvis de ikke kunne indlæses
+        return
 
-    # Filupload
     uploaded_file = st.file_uploader("Upload your product list (Excel or CSV)", type=['xlsx', 'xls', 'csv'])
-
     if uploaded_file:
         df_user_raw = load_user_file(uploaded_file)
         if df_user_raw is not None:
-            # Preprocess
             df_user = preprocess_user_data(df_user_raw)
             if df_user is None:
-                return  # Stop, hvis preprocess fejlede
+                return
 
-            # Knap 1: Word-fil (ingen partial match)
             if st.button("Generate List for presentations"):
                 word_buffer = generate_presentation_word(df_user, df_library)
                 if word_buffer:
-                    st.download_button(
-                        "Download Word file", 
-                        data=word_buffer, 
-                        file_name="product-list.docx"
-                    )
+                    st.download_button("Download Word file", data=word_buffer, file_name="product-list.docx")
 
-            # Knap 2: Order import (2 kolonner)
             if st.button("Generate product list for order import in partner platform"):
                 order_buffer = generate_order_import_excel(df_user)
-                st.download_button(
-                    "Download Excel file", 
-                    data=order_buffer, 
-                    file_name="order-import.xlsx"
-                )
+                st.download_button("Download Excel file", data=order_buffer, file_name="order-import.xlsx")
 
-            # Knap 3: SKU mapping & masterdata (med fallback)
             if st.button("Generate SKU mapping & masterdata"):
                 sku_buffer = generate_sku_masterdata_excel(df_user, df_library, df_master)
                 if sku_buffer:
-                    st.download_button(
-                        "Download Excel file", 
-                        data=sku_buffer, 
-                        file_name="SKUmapping-masterdata.xlsx"
-                    )
-
+                    st.download_button("Download Excel file", data=sku_buffer, file_name="SKUmapping-masterdata.xlsx")
 
 if __name__ == "__main__":
     main()
