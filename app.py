@@ -189,32 +189,33 @@ def generate_order_import_excel(df_user):
 def generate_sku_masterdata_excel(df_user, df_library, df_master):
     """
     Generates an Excel file with two sheets:
-    
+
     1) "Item number mapping":
-       - Uses a direct match between df_user's ARTICLE_NO and Library_data's EUR ITEM NO.
-       - If no direct match is found (e.g. ARTICLE_NO = "98290-721"), strips off everything after "-"
-         (resulting in "98290") and attempts a fallback match.
+       - Attempts a direct match between df_user's ARTICLE_NO and Library_data's EUR ITEM NO.
+       - If no direct match is found (e.g. ARTICLE_NO = "98290-721"), the function strips off everything after "-" (resulting in "98290")
+         and attempts a fallback match.
        - Returns the following columns:
-           • Quantity in setting (from df_user's Quantity)
+           • Quantity in setting (from df_user's QUANTITY)
            • Article No.
            • Short Text
-           • Variant text (with empty cells replaced by an empty string)
+           • Variant text (with NaN replaced by an empty string)
            • Product in setting (from Library_data's Product)
            • EUR item no.
            • GBP item no.
            • APMEA item no.
            • USD pattern no.
            • Match status
-           
+
     2) "Master data export":
-       - Uses a direct match between df_user's ARTICLE_NO and masterdata's ITEM NO.
-       - If no direct match is found, applies fallback matching by stripping ARTICLE_NO for "-" and matching the base value.
+       - Attempts a direct match between df_user's ARTICLE_NO and masterdata's ITEM NO.
+       - If no direct match is found, the function strips off everything after "-" and attempts a fallback match.
        - Returns all columns from the masterdata file plus the df_user columns:
          Article No., Short Text, and Variant text (with Variant text cleaned of NaN values).
-    
-    In both sheets, any NaN values in Variant text are replaced with an empty string.
     """
-    # --- ITEM NUMBER MAPPING ---
+    # ---------------------------
+    # ITEM NUMBER MAPPING
+    # ---------------------------
+    # Rename library columns to standardized keys
     rename_map = {
         "PRODUCT": "LIB_PRODUCT",
         "EUR ITEM NO.": "LIB_EUR_ITEM_NO",
@@ -237,41 +238,38 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     else:
         merged_direct = df_user.copy()
 
-    # Ensure Variant text is cleaned (replace NaN with "")
+    # Ensure Variant text has no NaN
     merged_direct["VARIANT_TEXT"] = merged_direct["VARIANT_TEXT"].fillna("")
 
-    if "LIB_PRODUCT" in merged_direct.columns:
-        mask_no_direct = merged_direct["LIB_PRODUCT"].isna()
-    else:
-        mask_no_direct = pd.Series([True] * len(merged_direct), index=merged_direct.index)
+    # Create fallback key: BASE_ARTICLE from ARTICLE_NO (strip off anything after "-")
+    df_user_fallback = df_user.copy()
+    df_user_fallback["BASE_ARTICLE"] = df_user_fallback["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
 
-    fallback_rows = merged_direct.loc[mask_no_direct].copy()
-    fallback_rows["SHORT_ARTICLE"] = fallback_rows["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
-
+    # Fallback merge on BASE_ARTICLE vs LIB_EUR_ITEM_NO
     if "LIB_EUR_ITEM_NO" in df_library_renamed.columns:
-        fallback_merged = pd.merge(
-            fallback_rows,
+        fallback_merge = pd.merge(
+            df_user_fallback,
             df_library_renamed,
             how="left",
-            left_on="SHORT_ARTICLE",
+            left_on="BASE_ARTICLE",
             right_on="LIB_EUR_ITEM_NO"
         )
     else:
-        fallback_merged = fallback_rows.copy()
+        fallback_merge = df_user_fallback.copy()
 
-    columns_to_update = [
-        "LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO",
-        "LIB_APMEA_ITEM_NO", "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"
-    ]
-    for col in columns_to_update:
-        if col in fallback_merged.columns:
-            merged_direct.loc[mask_no_direct, col] = fallback_merged[col].values
+    # Fill missing library columns from fallback_merge using combine_first
+    for col in ["LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO", 
+                "LIB_APMEA_ITEM NO." if "LIB_APMEA ITEM NO." in df_library_renamed.columns else "LIB_APMEA_ITEM_NO",
+                "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"]:
+        if col in fallback_merge.columns:
+            merged_direct[col] = merged_direct[col].combine_first(fallback_merge[col])
 
+    # Build the Item number mapping DataFrame
     item_number_mapping_df = pd.DataFrame({
         "Quantity in setting": merged_direct["QUANTITY"],
         "Article No.": merged_direct["ARTICLE_NO"],
         "Short Text": merged_direct["SHORT_TEXT"],
-        "Variant text": merged_direct["VARIANT_TEXT"],
+        "Variant text": merged_direct["VARIANT_TEXT"].fillna(""),
         "Product in setting": merged_direct.get("LIB_PRODUCT", None),
         "EUR item no.": merged_direct.get("LIB_EUR_ITEM_NO", None),
         "GBP item no.": merged_direct.get("LIB_GBP_ITEM_NO", None),
@@ -279,13 +277,16 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         "USD pattern no.": merged_direct.get("LIB_USD_PATTERN_NO", None),
         "Match status": merged_direct.get("LIB_MATCH_STATUS", None)
     })
-    item_number_mapping_df["Variant text"] = item_number_mapping_df["Variant text"].fillna("")
+    # Remove rows with empty Article No.
     item_number_mapping_df = item_number_mapping_df[item_number_mapping_df["Article No."].astype(bool)]
 
-    # --- MASTER DATA EXPORT ---
+    # ---------------------------
+    # MASTER DATA EXPORT
+    # ---------------------------
     if "ITEM NO." not in df_master.columns:
         master_data_export_df = pd.DataFrame(columns=["Article No.", "Short Text", "Variant text"] + df_master.columns.tolist())
     else:
+        # Direct merge on ARTICLE_NO vs ITEM NO.
         master_direct = pd.merge(
             df_user,
             df_master,
@@ -293,22 +294,20 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             left_on="ARTICLE_NO",
             right_on="ITEM NO."
         )
-        mask_no_direct_master = master_direct["ITEM NO."].isna()
-        fallback_master_rows = master_direct.loc[mask_no_direct_master].copy()
-        fallback_master_rows["SHORT_ARTICLE"] = fallback_master_rows["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
+        # Create fallback key for master merge
+        df_user_master = df_user.copy()
+        df_user_master["BASE_ARTICLE"] = df_user_master["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
 
-        fallback_master_merged = pd.merge(
-            fallback_master_rows,
+        fallback_master = pd.merge(
+            df_user_master,
             df_master,
             how="left",
-            left_on="SHORT_ARTICLE",
+            left_on="BASE_ARTICLE",
             right_on="ITEM NO."
         )
-
+        # Fill missing masterdata columns using combine_first
         for col in df_master.columns:
-            if col in fallback_master_merged.columns:
-                master_direct.loc[mask_no_direct_master, col] = fallback_master_merged[col].values
-
+            master_direct[col] = master_direct[col].combine_first(fallback_master[col])
         master_direct.drop_duplicates(inplace=True)
         master_direct.rename(columns={
             "ARTICLE_NO": "Article No.",
@@ -321,7 +320,7 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         master_data_export_df = master_direct[front_cols + other_cols]
         master_data_export_df = master_data_export_df[master_data_export_df["Article No."].astype(bool)]
 
-    # Write both sheets to one Excel file
+    # Write both sheets to a single Excel file
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         item_number_mapping_df.to_excel(writer, sheet_name="Item number mapping", index=False)
