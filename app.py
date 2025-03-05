@@ -119,19 +119,22 @@ def preprocess_user_data(df):
 # Helper function for fallback key
 #####################
 
+
+
 def get_fallback_key(article):
     """
     Returns the fallback key for an article number.
-    If the article starts with "SPECIAL -", remove that prefix and return the remainder.
+    If the article starts with "SPECIAL", remove that prefix and return the remainder.
     Otherwise, split on '-' and return the first segment.
     """
     article = article.strip()
-    # Check if article starts with "SPECIAL -", case-insensitive
-    if article.lower().startswith("special -"):
-        # Remove "SPECIAL -" (allowing for variations in spacing)
-        return re.sub(r"^special\s*-\s*", "", article, flags=re.IGNORECASE).strip().upper()
+    if article.lower().startswith("special"):
+        # Remove "SPECIAL" and any following whitespace
+        return re.sub(r"^special\s*", "", article, flags=re.IGNORECASE).strip().upper()
     else:
         return article.split('-')[0].strip().upper()
+
+
 
 #####################
 # 3. Product list for presentations (Word) - full match only, no fallback
