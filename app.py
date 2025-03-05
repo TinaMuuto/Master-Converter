@@ -7,7 +7,7 @@ from io import BytesIO
 from docx import Document
 
 #####################
-# 1. Data-load-funktioner
+# 1. Data-load functions
 #####################
 
 def load_library_data(library_path="Library_data.xlsx"):
@@ -83,7 +83,7 @@ def load_user_file(uploaded_file):
         return None
 
 #####################
-# 2. Preprocessing af brugerens data
+# 2. Preprocessing of user data
 #####################
 
 def preprocess_user_data(df):
@@ -115,33 +115,34 @@ def preprocess_user_data(df):
     return out_df
 
 #####################
-# Helper function: Fallback key generation
+# Helper: Fallback key generation
 #####################
 
 def get_fallback_key(article):
     """
     Returns a fallback key for an article number.
-    First, splits the article on '-' and takes the first part.
-    Then, if the key starts with "SPECIAL", removes that prefix and any leading spaces.
+    First, splits the article on '-' and takes the first segment.
+    Then, if that segment starts with "SPECIAL", removes the "SPECIAL" prefix and any leading spaces.
     Returns the cleaned key in uppercase.
     """
     article = article.strip()
-    # Split on '-' and take first part
     key = article.split('-')[0].strip().upper()
     if key.startswith("SPECIAL"):
         key = key[len("SPECIAL"):].strip().upper()
     return key
 
 #####################
-# 3. Product list for presentations (Word) - full match only, no fallback
+# 3. Product list for presentations (Word) - using fallback logic
 #####################
 
 def generate_presentation_word(df_user, df_library):
     """
     For each row in df_user:
       - Attempts a direct match between ARTICLE_NO and df_library['EUR ITEM NO.'].
-      - If a match is found, outputs "QUANTITY X PRODUCT".
-      - Otherwise, outputs "QUANTITY X SHORT_TEXT - VARIANT_TEXT"
+      - If a direct match is found, outputs "QUANTITY X PRODUCT".
+      - If no direct match is found, computes a fallback key using get_fallback_key and tries to find a match.
+      - If a fallback match is found, outputs "QUANTITY X PRODUCT" using the fallback result.
+      - Otherwise, outputs "QUANTITY X SHORT_TEXT - VARIANT_TEXT" 
         (omitting '- VARIANT_TEXT' if empty or equals "LIGHT OPTION: OFF").
     The list is sorted alphabetically (case-insensitive) before generating a Word document.
     """
@@ -158,7 +159,13 @@ def generate_presentation_word(df_user, df_library):
         quantity = row["QUANTITY"]
         short_text = row["SHORT_TEXT"]
         variant_text = row["VARIANT_TEXT"]
+        
+        # Attempt direct match
         product_match = lookup_library.get(article_no)
+        # If no direct match, use fallback key
+        if not product_match:
+            fallback_key = get_fallback_key(article_no)
+            product_match = lookup_library.get(fallback_key)
         if product_match:
             sort_key = product_match
             final_line = f"{quantity} X {product_match}"
@@ -180,17 +187,19 @@ def generate_presentation_word(df_user, df_library):
     return buffer
 
 #####################
-# 4. Order import file (Excel with 2 columns, no header)
+# 4. Order import file (Excel with 2 columns, no header) - using fallback for ARTICLE_NO
 #####################
 
 def generate_order_import_excel(df_user):
     """
     Returns an Excel file (as BytesIO) with 2 columns (no headers):
       - Column A: QUANTITY
-      - Column B: ARTICLE_NO
+      - Column B: ARTICLE_NO (cleaned using fallback logic)
     """
+    df_order = df_user.copy()
+    df_order["ARTICLE_NO"] = df_order["ARTICLE_NO"].apply(get_fallback_key)
     buffer = BytesIO()
-    temp_df = df_user[["QUANTITY", "ARTICLE_NO"]].copy()
+    temp_df = df_order[["QUANTITY", "ARTICLE_NO"]].copy()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         temp_df.to_excel(writer, index=False, header=False)
     buffer.seek(0)
@@ -206,8 +215,7 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     
     1) "Item number mapping":
        - Attempts a direct match between df_user's ARTICLE_NO and Library_data's EUR ITEM NO.
-       - If no direct match is found (e.g. ARTICLE_NO = "98290-721"), computes a fallback key using get_fallback_key,
-         which first splits on '-' and then, if the key starts with "SPECIAL", removes the "SPECIAL" prefix.
+       - If no direct match is found, computes a fallback key using get_fallback_key and attempts a match.
        - Returns the following columns:
            • Quantity in setting (from df_user's QUANTITY)
            • Article No.
@@ -250,7 +258,6 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     
     merged_direct["VARIANT_TEXT"] = merged_direct["VARIANT_TEXT"].fillna("")
     
-    # Compute fallback key using get_fallback_key
     df_user_fallback = df_user.copy()
     df_user_fallback["BASE_ARTICLE"] = df_user_fallback["ARTICLE_NO"].apply(get_fallback_key)
     
@@ -265,7 +272,6 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     else:
         fallback_merge = df_user_fallback.copy()
     
-    # Fill missing library columns from fallback_merge
     for col in ["LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO", 
                 "LIB_APMEA_ITEM_NO", "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"]:
         if col in fallback_merge.columns:
@@ -349,7 +355,7 @@ def main():
     - **Order import file:** An Excel file with two columns (Quantity and Article No.) for direct import into the partner platform.
       - File name: order-import.xlsx
     - **Product SKU mapping:** An Excel file with two sheets:
-      1. **Product SKU mapping:** Combines uploaded data (Article No. from the "Article List" sheet) with Library_data (matched on EUR item no.). If a direct match is not found, the article number is cleaned using fallback logic (first split on '-' and then, if it starts with "SPECIAL", remove the prefix) and then matched.
+      1. **Product SKU mapping:** Combines uploaded data (Article No. from the "Article List" sheet) with Library_data (matched on EUR item no.). If a direct match is not found, the article number is cleaned using fallback logic (split on '-' and removal of "SPECIAL" prefix) and then matched.
       2. **Master data export:** Uses uploaded data (Article No.) to find matching records in the master data file (matched on ITEM NO.). If no direct match is found, the article number is cleaned similarly and then matched. All master data columns are returned, along with the uploaded file’s Article No., Short Text, and Variant Text.
       - File name: SKUmapping-masterdata.xlsx
 
