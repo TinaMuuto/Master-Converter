@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 import os
+import re
 from io import BytesIO
 from docx import Document
 
@@ -36,7 +37,7 @@ def load_library_data(library_path="Library_data.xlsx"):
 def load_master_data(master_path="Muuto_Master_Data_CON_January_2025_EUR.xlsx"):
     """
     Loads the entire master data file.
-    Expected unique lookup column: ITEM NO. (in column B).
+    Expected lookup column: ITEM NO. (in column B).
     Returns a DataFrame with all columns.
     """
     if not os.path.exists(master_path):
@@ -93,7 +94,7 @@ def preprocess_user_data(df):
       - Index 2  -> SHORT_TEXT
       - Index 4  -> VARIANT_TEXT
     Assumes the first 2 rows have been skipped.
-    Variant text is filled with empty string where missing.
+    Replaces NaN in VARIANT_TEXT with an empty string.
     """
     if df.shape[1] < 31:
         st.error("The uploaded file does not have enough columns (at least 31 required). Check format.")
@@ -102,9 +103,8 @@ def preprocess_user_data(df):
     article_no = df.iloc[:, 17].astype(str).str.strip().str.upper()
     quantity = df.iloc[:, 30]
     short_text = df.iloc[:, 2].astype(str).str.strip().str.upper()
-    # Fill NaN in Variant Text with empty string
     variant_text = df.iloc[:, 4].fillna("").astype(str).str.strip().str.upper()
-    
+
     out_df = pd.DataFrame({
         "ARTICLE_NO": article_no,
         "QUANTITY": quantity,
@@ -116,15 +116,33 @@ def preprocess_user_data(df):
     return out_df
 
 #####################
+# Helper function for fallback key
+#####################
+
+def get_fallback_key(article):
+    """
+    Returns the fallback key for an article number.
+    If the article starts with "SPECIAL -", remove that prefix and return the remainder.
+    Otherwise, split on '-' and return the first segment.
+    """
+    article = article.strip()
+    # Check if article starts with "SPECIAL -", case-insensitive
+    if article.lower().startswith("special -"):
+        # Remove "SPECIAL -" (allowing for variations in spacing)
+        return re.sub(r"^special\s*-\s*", "", article, flags=re.IGNORECASE).strip().upper()
+    else:
+        return article.split('-')[0].strip().upper()
+
+#####################
 # 3. Product list for presentations (Word) - full match only, no fallback
 #####################
 
 def generate_presentation_word(df_user, df_library):
     """
     For each row in df_user:
-      - Attempt a direct match: 'ARTICLE_NO' vs. df_library['EUR ITEM NO.'].
-      - If a match is found, return "QUANTITY X PRODUCT".
-      - If no match, return "QUANTITY X SHORT_TEXT - VARIANT_TEXT"
+      - Attempt a direct match between ARTICLE_NO and df_library['EUR ITEM NO.'].
+      - If a match is found, output "QUANTITY X PRODUCT".
+      - If no match is found, output "QUANTITY X SHORT_TEXT - VARIANT_TEXT" 
         (omitting '- VARIANT_TEXT' if empty or equals "LIGHT OPTION: OFF").
     The list is sorted alphabetically (case-insensitive) before generating a Word document.
     """
@@ -183,7 +201,7 @@ def generate_order_import_excel(df_user):
     return buffer
 
 #####################
-# 5. SKU mapping & Masterdata (with fallback)
+# 5. SKU mapping & Masterdata (with fallback and special-case handling)
 #####################
 
 def generate_sku_masterdata_excel(df_user, df_library, df_master):
@@ -192,8 +210,10 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
 
     1) "Item number mapping":
        - Attempts a direct match between df_user's ARTICLE_NO and Library_data's EUR ITEM NO.
-       - If no direct match is found (e.g. ARTICLE_NO = "98290-721"), the function strips off everything after "-" (resulting in "98290")
-         and attempts a fallback match.
+       - If no direct match is found (e.g. ARTICLE_NO = "98290-721"), the function uses a fallback:
+           • It computes a fallback key using get_fallback_key(), which:
+             - Removes a leading "SPECIAL -" (if present), or
+             - Otherwise, splits on '-' and takes the first part.
        - Returns the following columns:
            • Quantity in setting (from df_user's QUANTITY)
            • Article No.
@@ -208,14 +228,11 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
 
     2) "Master data export":
        - Attempts a direct match between df_user's ARTICLE_NO and masterdata's ITEM NO.
-       - If no direct match is found, the function strips off everything after "-" and attempts a fallback match.
+       - If no direct match is found, computes a fallback key using get_fallback_key() and attempts a match.
        - Returns all columns from the masterdata file plus the df_user columns:
-         Article No., Short Text, and Variant text (with Variant text cleaned of NaN values).
+         Article No., Short Text, and Variant text (with Variant text cleaned of NaN).
     """
-    # ---------------------------
-    # ITEM NUMBER MAPPING
-    # ---------------------------
-    # Rename library columns to standardized keys
+    # --- ITEM NUMBER MAPPING ---
     rename_map = {
         "PRODUCT": "LIB_PRODUCT",
         "EUR ITEM NO.": "LIB_EUR_ITEM_NO",
@@ -226,7 +243,6 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     }
     df_library_renamed = df_library.rename(columns=rename_map, errors="ignore")
 
-    # Direct merge on ARTICLE_NO vs LIB_EUR_ITEM_NO
     if "LIB_EUR_ITEM_NO" in df_library_renamed.columns:
         merged_direct = pd.merge(
             df_user,
@@ -238,14 +254,12 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     else:
         merged_direct = df_user.copy()
 
-    # Ensure Variant text has no NaN
     merged_direct["VARIANT_TEXT"] = merged_direct["VARIANT_TEXT"].fillna("")
-
-    # Create fallback key: BASE_ARTICLE from ARTICLE_NO (strip off anything after "-")
+    
+    # Create fallback key using get_fallback_key for each ARTICLE_NO
     df_user_fallback = df_user.copy()
-    df_user_fallback["BASE_ARTICLE"] = df_user_fallback["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
+    df_user_fallback["BASE_ARTICLE"] = df_user_fallback["ARTICLE_NO"].apply(get_fallback_key)
 
-    # Fallback merge on BASE_ARTICLE vs LIB_EUR_ITEM_NO
     if "LIB_EUR_ITEM_NO" in df_library_renamed.columns:
         fallback_merge = pd.merge(
             df_user_fallback,
@@ -257,14 +271,12 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
     else:
         fallback_merge = df_user_fallback.copy()
 
-    # Fill missing library columns from fallback_merge using combine_first
-    for col in ["LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO", 
-                "LIB_APMEA_ITEM NO." if "LIB_APMEA ITEM NO." in df_library_renamed.columns else "LIB_APMEA_ITEM_NO",
-                "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"]:
+    # Use combine_first to fill missing library values from fallback_merge
+    for col in ["LIB_PRODUCT", "LIB_EUR_ITEM_NO", "LIB_GBP_ITEM_NO",
+                "LIB_APMEA_ITEM_NO", "LIB_USD_PATTERN_NO", "LIB_MATCH_STATUS"]:
         if col in fallback_merge.columns:
             merged_direct[col] = merged_direct[col].combine_first(fallback_merge[col])
 
-    # Build the Item number mapping DataFrame
     item_number_mapping_df = pd.DataFrame({
         "Quantity in setting": merged_direct["QUANTITY"],
         "Article No.": merged_direct["ARTICLE_NO"],
@@ -277,16 +289,12 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         "USD pattern no.": merged_direct.get("LIB_USD_PATTERN_NO", None),
         "Match status": merged_direct.get("LIB_MATCH_STATUS", None)
     })
-    # Remove rows with empty Article No.
     item_number_mapping_df = item_number_mapping_df[item_number_mapping_df["Article No."].astype(bool)]
 
-    # ---------------------------
-    # MASTER DATA EXPORT
-    # ---------------------------
+    # --- MASTER DATA EXPORT ---
     if "ITEM NO." not in df_master.columns:
         master_data_export_df = pd.DataFrame(columns=["Article No.", "Short Text", "Variant text"] + df_master.columns.tolist())
     else:
-        # Direct merge on ARTICLE_NO vs ITEM NO.
         master_direct = pd.merge(
             df_user,
             df_master,
@@ -294,9 +302,8 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             left_on="ARTICLE_NO",
             right_on="ITEM NO."
         )
-        # Create fallback key for master merge
         df_user_master = df_user.copy()
-        df_user_master["BASE_ARTICLE"] = df_user_master["ARTICLE_NO"].str.split('-').str[0].str.strip().str.upper()
+        df_user_master["BASE_ARTICLE"] = df_user_master["ARTICLE_NO"].apply(get_fallback_key)
 
         fallback_master = pd.merge(
             df_user_master,
@@ -305,7 +312,6 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
             left_on="BASE_ARTICLE",
             right_on="ITEM NO."
         )
-        # Fill missing masterdata columns using combine_first
         for col in df_master.columns:
             master_direct[col] = master_direct[col].combine_first(fallback_master[col])
         master_direct.drop_duplicates(inplace=True)
@@ -320,7 +326,6 @@ def generate_sku_masterdata_excel(df_user, df_library, df_master):
         master_data_export_df = master_direct[front_cols + other_cols]
         master_data_export_df = master_data_export_df[master_data_export_df["Article No."].astype(bool)]
 
-    # Write both sheets to a single Excel file
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         item_number_mapping_df.to_excel(writer, sheet_name="Item number mapping", index=False)
@@ -350,8 +355,8 @@ def main():
     - **Order import file:** An Excel file with two columns (Quantity and Article No.) for direct import into the partner platform.
       - File name: order-import.xlsx
     - **Product SKU mapping:** An Excel file with two sheets:
-      1. **Product SKU mapping:** Combines uploaded data (Article No. from the "Article List" sheet) with Library_data (matched on EUR item no.). If a direct match is not found, the article number is stripped (e.g., "98290-721" becomes "98290") and then matched.
-      2. **Master data export:** Uses uploaded data (Article No.) to find matching records in the master data file (matched on ITEM NO.). If no direct match is found, the article number is stripped similarly and then matched. All master data columns are returned, along with the uploaded file’s Article No., Short Text, and Variant Text.
+      1. **Product SKU mapping:** Combines uploaded data (Article No. from the "Article List" sheet) with Library_data (matched on EUR item no.). If a direct match is not found, the article number is cleaned using fallback logic (removing any "SPECIAL -" prefix or splitting on '-') and then matched.
+      2. **Master data export:** Uses uploaded data (Article No.) to find matching records in the master data file (matched on ITEM NO.). If no direct match is found, the article number is cleaned similarly and then matched. All master data columns are returned, along with the uploaded file’s Article No., Short Text, and Variant Text.
       - File name: SKUmapping-masterdata.xlsx
 
     [Download an example file](https://raw.githubusercontent.com/TinaMuuto/Master-Converter/f280308cf9991b7eecb63e44ecac52dfb49482cf/pCon%20-%20exceleksport.xlsx)
