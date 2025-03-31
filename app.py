@@ -144,7 +144,8 @@ def generate_presentation_word(df_user, df_library):
       - If a fallback match is found, outputs "QUANTITY X PRODUCT" using the fallback result.
       - Otherwise, outputs "QUANTITY X SHORT_TEXT - VARIANT_TEXT" 
         (omitting '- VARIANT_TEXT' if empty or equals "LIGHT OPTION: OFF").
-      Additionally, if the key used for matching contains "ALL COLORS", the match is ignored.
+      Additionally, if the product text (from the "PRODUCT" column in library) contains "ALL COLORS",
+      the match is ignored and the fallback formatting is used.
     The list is sorted alphabetically (case-insensitive) before generating a Word document.
     """
     required_cols = ["PRODUCT", "EUR ITEM NO."]
@@ -163,16 +164,13 @@ def generate_presentation_word(df_user, df_library):
         
         # Forsøg direkte match
         product_match = lookup_library.get(article_no)
-        key_used = article_no  # Gemmer den nøgle, der blev brugt til opslaget
-        
         # Hvis intet direkte match, anvend fallback-nøgle
         if not product_match:
             fallback_key = get_fallback_key(article_no)
             product_match = lookup_library.get(fallback_key)
-            key_used = fallback_key
         
-        # Hvis den benyttede nøgle indeholder "ALL COLORS", ignorer matchet
-        if product_match and "ALL COLORS" in key_used.upper():
+        # Tjek om produktteksten fra library indeholder "ALL COLORS"
+        if product_match and "ALL COLORS" in product_match.upper():
             product_match = None
         
         if product_match:
@@ -194,6 +192,7 @@ def generate_presentation_word(df_user, df_library):
     doc.save(buffer)
     buffer.seek(0)
     return buffer
+
 
 
 #####################
