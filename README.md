@@ -37,9 +37,8 @@ pip install streamlit pandas openpyxl python-docx
 
 Start appen ved hjælp af Streamlit:
 
-```bash
-[streamlit run <dit_scriptnavn>.py](https://muuto-pcon-converter.streamlit.app/)
-```
+https://muuto-pcon-converter.streamlit.app/
+
 
 -----
 
