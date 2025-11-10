@@ -1,6 +1,6 @@
-# Muuto Product List Generator
+# 💡 Muuto Product List Generator
 
-Dette projekt er en **Streamlit-applikation** designet til at strukturere, validere og berige pCon produktdata. Appen konverterer pCon-eksportfiler til tre specialiserede outputformater: en præsentationsliste (Word), en ordreimportfil (Excel) og en detaljeret SKU-mapping/masterdata-eksport (Excel).
+Dette projekt er en **Streamlit-applikation** designet til at hjælpe med at strukturere, validere og berige pCon produktdata. Appen konverterer pCon-eksportfiler til tre specialiserede outputformater: en præsentationsliste (**Word**), en ordreimportfil (**Excel**) og en detaljeret SKU-mapping/masterdata-eksport (**Excel**).
 
 ---
 
@@ -31,3 +31,65 @@ Installer de nødvendige afhængigheder:
 
 ```bash
 pip install streamlit pandas openpyxl python-docx
+````
+
+### 3\. Kørsel
+
+Start appen ved hjælp af Streamlit:
+
+```bash
+streamlit run <dit_scriptnavn>.py
+```
+
+-----
+
+## ⚙️ Kernen i Logikken
+
+### A. Dataindlæsning og Preprocessing
+
+Brugerfilen (pCon-eksport) forventes at være enten Excel med fanen **"Article List"** eller CSV. De første 2 rækker springes over.
+
+| Nyt Kolonnenavn | Kilde (0-indeks) | Transformation |
+| :--- | :--- | :--- |
+| `ARTICLE_NO` | Kolonne **17** | Strippet, Uppercase |
+| `QUANTITY` | Kolonne **30** | |
+| `SHORT_TEXT` | Kolonne **2** | Strippet, Uppercase |
+| `VARIANT_TEXT` | Kolonne **4** | Strippet, Uppercase, NaN til `""` |
+
+### B. Fallback Nøgle (`get_fallback_key`)
+
+Denne funktion renser `ARTICLE_NO` for at muliggøre matchende på baseniveau, når et direkte match mislykkes.
+
+**Logik:**
+
+1.  Deler artikelnummeret ved det første bindestreg (`-`).
+2.  Beholder kun den første del (Base-artikelnummer).
+3.  Hvis basen starter med `"SPECIAL"`, fjernes dette præfiks.
+4.  Returnerer resultatet i **Uppercase**.
+
+| Input (`ARTICLE_NO`) | Output (`BASE_ARTICLE`) |
+| :--- | :--- |
+| `12345-00-RED` | `12345` |
+| `SPECIAL 12345` | `12345` |
+
+-----
+
+## 📄 Detaljeret SKU/Masterdata Output
+
+Filen `SKUmapping-masterdata.xlsx` indeholder to faner, der kombinerer data fra alle tre kilder ved hjælp af **direkte match** efterfulgt af **fallback match**.
+
+### Fane 1: `Item number mapping`
+
+Fokuserer på berigelse fra **Library Data**.
+
+  * **Kolonner fra Brugerdata:** `Quantity in setting`, `Article No.`, `Short Text`, `Variant text`.
+  * **Kolonner fra Library Data:** `Product in setting`, `EUR item no.`, `GBP item no.`, `APMEA item no.`, `USD pattern no.`, `Match status`.
+
+### Fane 2: `Master data export`
+
+Fokuserer på at hente alle detaljer fra den centrale **Master Data**-fil.
+
+  * **Kolonner fra Brugerdata:** `Article No.`, `Short Text`, `Variant text`.
+  * **Kolonner fra Master Data:** **Alle** kolonner fra den indlæste masterdata-fil.
+
+<!-- end list -->
