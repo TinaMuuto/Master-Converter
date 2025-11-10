@@ -1,6 +1,8 @@
-# 💡 Muuto Product List Generator
+# 💡  Product List Generator, pCon exports
 
 Dette projekt er en **Streamlit-applikation** designet til at hjælpe med at strukturere, validere og berige pCon produktdata. Appen konverterer pCon-eksportfiler til tre specialiserede outputformater: en præsentationsliste (**Word**), en ordreimportfil (**Excel**) og en detaljeret SKU-mapping/masterdata-eksport (**Excel**).
+
+Den er lavet til Spatial design, WM og sales operations.
 
 ---
 
